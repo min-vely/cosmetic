@@ -169,7 +169,7 @@ def crawl_olive_young_parallel():
             driver.quit()
         except:
             pass
-        with open("oliveyoung_lip_makeup.json", "w", encoding="utf-8") as f:
+        with open("../data/oliveyoung_lip_makeup.json", "w", encoding="utf-8") as f:
             json.dump(products_data, f, ensure_ascii=False, indent=2)
         print(f"{len(products_data)}건 저장 완료 -> oliveyoung_lip_makeup.json")
 

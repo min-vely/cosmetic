@@ -68,8 +68,8 @@ class OliveYoungPreprocessor:
 
 if __name__ == "__main__":
     processor = OliveYoungPreprocessor(
-        input_path="oliveyoung_lip_makeup.json",
-        output_path="oliveyoung_lip_makeup_preprocessed.json"
+        input_path="../data/oliveyoung_lip_makeup.json",
+        output_path="../data/oliveyoung_lip_makeup_preprocessed.json"
     )
     processor.load_json()
     processor.preprocess()
