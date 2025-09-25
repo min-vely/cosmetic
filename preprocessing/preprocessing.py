@@ -1,3 +1,4 @@
+import os
 import json
 import re
 
@@ -31,11 +32,28 @@ class OliveYoungPreprocessor:
 
 
     def clean_code_name(self, code: str) -> str:
+        import re
+
+        # 기존 정규식 그대로
         code = re.sub(r'\[.*?\]', '', code)  # [] 안 내용 제거
-        code = code.replace('(품절)', '')  # (품절) 제거
-        code = re.sub(r'\n.*$', '', code)  # \n 뒤 가격 제거
-        code = re.sub(r'\s+', ' ', code).strip()  # 공백 정리
+        code = code.replace('(품절)', '')    # (품절) 제거
+        code = re.sub(r'\n.*$', '', code)    # \n 뒤 가격 제거
+        code = code.strip()
+
+        # 단독 "단품"이면 그대로 반환
+        if code == "단품":
+            return code
+
+        # 앞 구분 문자(_, +, /, 공백)와 함께 '단품', '세트', '기획' 제거
+        code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
+
+        # 남은 공백 정리
+        code = re.sub(r'\s+', ' ', code).strip()
+
         return code
+
+
+
 
     def preprocess(self):
         preprocessed = []
@@ -67,9 +85,13 @@ class OliveYoungPreprocessor:
             json.dump(self.products, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    INPUT_PATH = os.path.join(BASE_DIR, "..", "data", "oliveyoung_lip_makeup.json")
+    OUTPUT_PATH = os.path.join(BASE_DIR, "..", "data", "oliveyoung_lip_makeup_preprocessed.json")
+
     processor = OliveYoungPreprocessor(
-        input_path="../data/oliveyoung_lip_makeup.json",
-        output_path="../data/oliveyoung_lip_makeup_preprocessed.json"
+        input_path=INPUT_PATH,
+        output_path=OUTPUT_PATH
     )
     processor.load_json()
     processor.preprocess()
