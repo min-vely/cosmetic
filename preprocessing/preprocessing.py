@@ -17,13 +17,15 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\[.*?\]', '', name)
         # () 안 내용 제거
         name = re.sub(r'\(.*?\)', '', name)
+        # 1+1, 1+2, 2+1 등 제거
+        name = re.sub(r'\b\d+\s*\+\s*\d+\b', '', name)
         # 용량/종류/개/색상 관련 표현 제거
         name = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', name, flags=re.IGNORECASE)
         # 단품/기획/한정 기획 제거
         name = re.sub(r'\b(단품|기획|한정\s*기획)\b', '', name)
         # "중 택1", "중 택2", "택1", "택2" 제거
-        name = re.sub(r'\b중\s*택\d+\b', '', name)   # "중 택1"
-        name = re.sub(r'\b택\d+\b', '', name)        # "택1"
+        name = re.sub(r'\b중\s*택\d+\b', '', name)
+        name = re.sub(r'\b택\d+\b', '', name)
         # 불필요한 슬래시(/) 정리 (앞뒤 공백 포함)
         name = re.sub(r'\s*/\s*', ' ', name)
         # 중복 공백 제거 + 양쪽 공백 제거
@@ -32,12 +34,11 @@ class OliveYoungPreprocessor:
 
 
     def clean_code_name(self, code: str) -> str:
-        import re
-
-        # 기존 정규식 그대로
         code = re.sub(r'\[.*?\]', '', code)  # [] 안 내용 제거
         code = code.replace('(품절)', '')    # (품절) 제거
         code = re.sub(r'\n.*$', '', code)    # \n 뒤 가격 제거
+        # 1+1, 1+2, 2+1 등 제거
+        code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
         code = code.strip()
 
         # 단독 "단품"이면 그대로 반환
@@ -46,12 +47,10 @@ class OliveYoungPreprocessor:
 
         # 앞 구분 문자(_, +, /, 공백)와 함께 '단품', '세트', '기획' 제거
         code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
-
         # 남은 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
 
         return code
-
 
 
 
