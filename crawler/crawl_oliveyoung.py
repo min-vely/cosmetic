@@ -14,6 +14,11 @@ from webdriver_manager.chrome import ChromeDriverManager
 CAT_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
 MAX_TABS = 4  # 동시에 열고 처리할 탭 개수
 
+def wait_css(driver, css, timeout=15):
+    return WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, css))
+    )
+
 def get_text_safe(driver, selectors):
     for sel in selectors:
         try:
@@ -78,25 +83,18 @@ def crawl_olive_young_parallel():
                 hrefs.append(href)
 
         product_links = hrefs[:48]  # 48개 상품
-
-        # =========================
-        # 1차: 탭 열기 + 드롭다운 클릭 미리 수행
-        # =========================
         tab_queue = []
+
         for i, link in enumerate(product_links, 1):
+            # goodsNo 추출
+            match = re.search(r"goodsNo=([A-Z0-9]+)", link)
+            if not match:
+                print(f"[SKIP] goodsNo를 찾을 수 없음: {link}")
+                continue
             base_handle, detail_handle = open_in_new_tab(driver, link)
-            try:
-                sel_button = driver.find_element(By.CSS_SELECTOR, ".sel_option")
-                sel_button.click()  # 드롭다운 미리 열기
-            except:
-                pass
             tab_queue.append((i, link, base_handle, detail_handle))
 
-            # MAX_TABS만큼 탭이 열렸거나 마지막 상품이면 처리
             if len(tab_queue) >= MAX_TABS or i == len(product_links):
-                # =========================
-                # 2차: 옵션 수집 + 탭 닫기
-                # =========================
                 for idx, url, base, handle in tab_queue:
                     driver.switch_to.window(handle)
 
@@ -123,21 +121,30 @@ def crawl_olive_young_parallel():
                         except:
                             pass
 
-                    # 옵션 수집 (이미 드롭다운이 열려 있으므로 바로 수집)
+                    # ===========================
+                    # 옵션 드롭다운 클릭 및 옵션 수집 (WebDriverWait + 추가 1초 대기)
+                    # ===========================
                     variants = []
                     try:
+                        sel_button = driver.find_element(By.CSS_SELECTOR, ".sel_option")
+                        sel_button.click()
+
+                        # 옵션이 최소 하나 이상 나타날 때까지 최대 5초 동적 대기
+                        WebDriverWait(driver, 5).until(
+                            lambda d: len(d.find_elements(By.CSS_SELECTOR, ".option_value")) > 0
+                        )
+
+                        # 옵션이 로딩되었다면 1초 추가 대기
+                        time.sleep(1)
+
                         option_elements = driver.find_elements(By.CSS_SELECTOR, ".option_value")
                         for option in option_elements:
                             option_name = option.text.strip()
                             if option_name:
                                 variants.append({"code_name": option_name})
+
                     except:
-                        pass
-
-                    # 옵션이 하나도 없는 경우 단품 처리
-                    if not variants:
                         variants = [{"code_name": "단품"}]
-
 
                     for v in variants:
                         products_data.append({
@@ -146,7 +153,7 @@ def crawl_olive_young_parallel():
                             "price": price,
                             "product_main_image": main_img,
                             "code_name": v["code_name"],
-                            "product_url": url,
+                            "product_url": link,
                         })
 
                     print(f"[{idx:02d}/{len(product_links)}] {name} - {len(variants)} variants")
