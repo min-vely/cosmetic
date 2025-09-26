@@ -10,9 +10,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# 48개 상품 페이지
+# 디버깅용: 2개 제품만 가져오기
+MAX_PRODUCTS = 2
+MAX_TABS = 2
+
 CAT_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
-MAX_TABS = 4  # 동시에 열고 처리할 탭 개수
 
 def wait_css(driver, css, timeout=15):
     return WebDriverWait(driver, timeout).until(
@@ -58,7 +60,6 @@ def crawl_olive_young_parallel():
 
     products_data = []
 
-    # BASE_DIR + OUTPUT_PATH 설정
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -82,11 +83,10 @@ def crawl_olive_young_parallel():
                 seen.add(href)
                 hrefs.append(href)
 
-        product_links = hrefs[:48]  # 48개 상품
+        product_links = hrefs[:MAX_PRODUCTS]
         tab_queue = []
 
         for i, link in enumerate(product_links, 1):
-            # goodsNo 추출
             match = re.search(r"goodsNo=([A-Z0-9]+)", link)
             if not match:
                 print(f"[SKIP] goodsNo를 찾을 수 없음: {link}")
@@ -122,29 +122,59 @@ def crawl_olive_young_parallel():
                             pass
 
                     # ===========================
-                    # 옵션 드롭다운 클릭 및 옵션 수집 (WebDriverWait + 추가 1초 대기)
+                    # 옵션 수집
                     # ===========================
                     variants = []
                     try:
                         sel_button = driver.find_element(By.CSS_SELECTOR, ".sel_option")
                         sel_button.click()
-
-                        # 옵션이 최소 하나 이상 나타날 때까지 최대 5초 동적 대기
                         WebDriverWait(driver, 5).until(
                             lambda d: len(d.find_elements(By.CSS_SELECTOR, ".option_value")) > 0
                         )
-
-                        # 옵션이 로딩되었다면 1초 추가 대기
                         time.sleep(1)
-
                         option_elements = driver.find_elements(By.CSS_SELECTOR, ".option_value")
                         for option in option_elements:
                             option_name = option.text.strip()
                             if option_name:
                                 variants.append({"code_name": option_name})
-
                     except:
                         variants = [{"code_name": "단품"}]
+
+                    # ===========================
+                    # 상세 이미지 수집
+                    # ===========================
+                    product_images = []
+                    try:
+                        try:
+                            btn = driver.find_element(By.CLASS_NAME, "btn-controller")
+                            btn.click()
+                            time.sleep(1)
+                        except:
+                            pass
+
+                        speedy_imgs = driver.find_elements(By.CSS_SELECTOR, ".speedycat-container img")
+                        for img in speedy_imgs:
+                            try:
+                                driver.execute_script("arguments[0].scrollIntoView(true);", img)
+                                time.sleep(0.2)
+                                src = img.get_attribute("data-src") or img.get_attribute("src")
+                                if src and not src.startswith("data:image"):
+                                    product_images.append(src)
+                            except:
+                                continue
+
+                        speedy_divs = driver.find_elements(By.CSS_SELECTOR, ".speedycat-container div")
+                        for div in speedy_divs:
+                            try:
+                                bg_url = div.value_of_css_property("background-image")
+                                if bg_url.startswith("url("):
+                                    bg_url = bg_url[4:-1].strip('"').strip("'")
+                                    if bg_url and not bg_url.startswith("data:image") and bg_url not in product_images:
+                                        product_images.append(bg_url)
+                            except:
+                                continue
+                    except Exception as e:
+                        print("[IMAGE COLLECT ERROR]", e)
 
                     for v in variants:
                         products_data.append({
@@ -154,11 +184,11 @@ def crawl_olive_young_parallel():
                             "product_main_image": main_img,
                             "code_name": v["code_name"],
                             "product_url": link,
+                            "product_images": product_images
                         })
 
-                    print(f"[{idx:02d}/{len(product_links)}] {name} - {len(variants)} variants")
+                    print(f"[{idx:02d}/{len(product_links)}] {name} - {len(variants)} variants, 이미지 {len(product_images)}장 수집")
 
-                    # 탭 닫기
                     try:
                         driver.close()
                     except:
@@ -178,7 +208,6 @@ def crawl_olive_young_parallel():
         except:
             pass
 
-        # JSON 저장
         with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
             json.dump(products_data, f, ensure_ascii=False, indent=2)
         print(f"{len(products_data)}건 저장 완료 -> {OUTPUT_PATH}")
