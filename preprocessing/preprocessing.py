@@ -34,23 +34,31 @@ class OliveYoungPreprocessor:
 
 
     def clean_code_name(self, code: str) -> str:
-        code = re.sub(r'\[.*?\]', '', code)  # [] 안 내용 제거
-        code = code.replace('(품절)', '')    # (품절) 제거
-        code = re.sub(r'\n.*$', '', code)    # \n 뒤 가격 제거
-        # 1+1, 1+2, 2+1 등 제거
-        code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
         code = code.strip()
-
+        
         # 단독 "단품"이면 그대로 반환
         if code == "단품":
             return code
 
+        # [] 안 내용 제거
+        code = re.sub(r'\[.*?\]', '', code)
+        # () 안 내용 제거 (대소문자 NEW 포함)
+        code = re.sub(r'\(.*?\)', '', code)
+        # (품절) 제거
+        code = code.replace('(품절)', '')
+        # \n 뒤 내용 제거
+        code = re.sub(r'\n.*$', '', code)
+        # 1+1, 1+2, 2+1 등 제거
+        code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
+        # NEW, New, new 등 단독 제거
+        code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
         # 앞 구분 문자(_, +, /, 공백)와 함께 '단품', '세트', '기획' 제거
         code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
         # 남은 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
 
         return code
+
 
 
 
