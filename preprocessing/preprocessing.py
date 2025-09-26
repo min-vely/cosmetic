@@ -35,7 +35,7 @@ class OliveYoungPreprocessor:
 
     def clean_code_name(self, code: str) -> str:
         code = code.strip()
-        
+
         # 단독 "단품"이면 그대로 반환
         if code == "단품":
             return code
@@ -52,12 +52,18 @@ class OliveYoungPreprocessor:
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
         # NEW, New, new 등 단독 제거
         code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
+
+        # 괄호 제거 후 남은 + 뒤 사은품 제거
+        if '+' in code:
+            code = code.split('+')[0].strip()
+
         # 앞 구분 문자(_, +, /, 공백)와 함께 '단품', '세트', '기획' 제거
         code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
         # 남은 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
 
         return code
+
 
 
 
