@@ -1,16 +1,29 @@
-import time, json, re, os, html, unicodedata, string
+import sys
+import os
+import time
+import json
+import re
+import html
+import unicodedata
+import string
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import undetected_chromedriver as uc
 import atexit
 
+# ---------------- 경로 설정 ----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE_DIR, ".."))  # cosmetic 상위 폴더를 path에 추가
+
+from preprocessing.preprocessing import OliveYoungPreprocessor  # ⚡ 여기서 import
+
 PRODUCT_URLS = [
-    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000229303"
+    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000161007"
 ]
 MAX_REVIEWS_PER_OPTION = 10
 
-# ---------------- utils ----------------
+# ---------------- 기존 유틸 함수 그대로 ----------------
 def sanitize_text(s: str) -> str:
     if not isinstance(s, str): return s
     return (s.replace("\u2028","\n").replace("\u2029","\n")
@@ -295,50 +308,40 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
     return option_recs
 
 # ---------------- 메인 ----------------
-def crawl_oliveyoung_reviews_radio_debug():
+def crawl_oliveyoung_reviews_and_preprocess():
     chrome_options = uc.ChromeOptions()
-    
-    # 브라우저 기본 설정
-    chrome_options.add_argument("--window-size=1200,800")   # 창 크기
+    chrome_options.add_argument("--window-size=1200,800")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--lang=ko-KR")
-
-    # 헤더 강화
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-
-    # 드라이버 실행
     driver = uc.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
 
-
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUT_PATH = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_radio_debug.json")
+    OUT_PATH_RAW = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_raw.json")
+    OUT_PATH_PRE = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_preprocessed.json")
 
     products = []
     try:
         for idx, url in enumerate(PRODUCT_URLS, 1):
-            driver.get(url)  # 맨 앞으로 창 띄우기
+            driver.get(url)
             time.sleep(1)
             
-            # 브랜드, 제품명, 가격, 메인 이미지
             brand = get_text_safe_wait(driver, ["p.prd_brand a",".brand_name a",".brand_name"])
             name  = get_text_safe_wait(driver, ["p.prd_name","h2.prd_name",".prd_info h2","h2.goods_txt","h1"])
             price = ""
             for sel in [".price-2","span.price-1 span.num",".total_price .num"]:
-                try:
-                    txt = get_text_safe_wait(driver, [sel], timeout=3)
-                    digits = num_only(txt)
-                    if digits: price = digits; break
-                except: pass
+                txt = get_text_safe_wait(driver, [sel], timeout=3)
+                digits = num_only(txt)
+                if digits: price = digits; break
             main_img = ""
             for sel in ["div.prd_thumb img",".thumb img",".prd_img img",".left_area .img img",".imgArea img"]:
                 try:
@@ -371,17 +374,23 @@ def crawl_oliveyoung_reviews_radio_debug():
         try:
             driver.quit()
             atexit.unregister(driver.quit)
-        except:
-            pass
-        finally:
-            del driver
+        except: pass
+        finally: del driver
 
-        with open(OUT_PATH, "w", encoding="utf-8") as f:
-            json.dump(products, f, ensure_ascii=False, indent=2)
-        print(f"{len(products)}건 저장 완료 -> {OUT_PATH}")
+    # ---------------- 저장 (원본) ----------------
+    with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
+        json.dump(products, f, ensure_ascii=False, indent=2)
+    print(f"{len(products)}건 저장 완료 -> {OUT_PATH_RAW}")
+
+    # ---------------- 전처리 적용 ----------------
+    processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
+    processor.load_json()
+    processor.preprocess()
+    processor.save_json()
+    print(f"{len(processor.products)}건 전처리 후 저장 완료 -> {OUT_PATH_PRE}")
 
 
 if __name__ == "__main__":
     t0 = time.time()
-    crawl_oliveyoung_reviews_radio_debug()
+    crawl_oliveyoung_reviews_and_preprocess()
     print(f"[TIME] {time.time()-t0:.2f}s")

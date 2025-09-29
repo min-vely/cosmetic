@@ -51,6 +51,8 @@ class OliveYoungPreprocessor:
         code = re.sub(r'\n.*$', '', code)
         # 1+1, 1+2, 2+1 등 제거
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
+        # 용량/종류/개/색상 관련 표현 제거
+        code = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', code, flags=re.IGNORECASE)
         # NEW, New, new 등 단독 제거
         code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
 
@@ -67,8 +69,6 @@ class OliveYoungPreprocessor:
 
 
 
-
-
     def preprocess(self):
         preprocessed = []
         seen = set()
@@ -76,23 +76,30 @@ class OliveYoungPreprocessor:
         for p in self.products:
             new_product = p.copy()
             new_product['product_name'] = self.clean_product_name(p['product_name'])
-            new_product['code_name'] = self.clean_code_name(p['code_name'])
+            
+            # code_name, review_name 모두 clean_code_name 적용
+            if 'code_name' in p:
+                new_product['code_name'] = self.clean_code_name(p['code_name'])
+            if 'review_name' in p:
+                new_product['review_name'] = self.clean_code_name(p['review_name'])
 
             key = (
                 new_product['brand_name'],
                 new_product['product_name'],
-                new_product['code_name']
+                new_product.get('code_name', ''),
+                new_product.get('review_name', '')
             )
             if key not in seen:
                 seen.add(key)
                 preprocessed.append(new_product)
             else:
-                # 🔍 디버깅: 중복된 항목 출력
                 print(f"중복 제거됨 -> brand: {new_product['brand_name']}, "
-                      f"product: {new_product['product_name']}, "
-                      f"code: {new_product['code_name']}")
+                    f"product: {new_product['product_name']}, "
+                    f"code: {new_product.get('code_name', '')}, "
+                    f"review: {new_product.get('review_name', '')}")
 
         self.products = preprocessed
+
 
     def save_json(self):
         with open(self.output_path, "w", encoding="utf-8") as f:
