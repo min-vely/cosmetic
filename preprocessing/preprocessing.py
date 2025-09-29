@@ -12,6 +12,7 @@ class OliveYoungPreprocessor:
         with open(self.input_path, "r", encoding="utf-8") as f:
             self.products = json.load(f)
 
+    @classmethod
     def clean_product_name(self, name: str) -> str:
         # [] 안 내용 제거
         name = re.sub(r'\[.*?\]', '', name)
@@ -32,7 +33,7 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\s+', ' ', name).strip()
         return name
 
-
+    @classmethod
     def clean_code_name(self, code: str) -> str:
         code = code.strip()
 
