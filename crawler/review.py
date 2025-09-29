@@ -26,7 +26,8 @@ def get_text_safe_wait(driver, selectors, timeout=8):
             )
             txt = el.text.strip()
             if txt: return txt
-        except: continue
+        except: 
+            continue
     return ""
 
 def num_only(s: str) -> str:
@@ -102,7 +103,8 @@ def click_load_more_reviews(driver):
             time.sleep(0.2)
             el.click()
             return True
-        except: continue
+        except: 
+            continue
     return False
 
 def extract_option_and_body(it):
@@ -139,6 +141,7 @@ def extract_option_and_body(it):
     return sanitize_text(opt), sanitize_text(body)
 
 def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10):
+    # 현재 화면이 해당 옵션으로 필터된다고 가정하고 수집
     want_norm = normalize_option_label(code_name_raw)
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
@@ -162,9 +165,9 @@ def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10)
                     time.sleep(0.1)
             except: pass
             opt_txt, body_txt = extract_option_and_body(it)
-            if normalize_option_label(opt_txt) != want_norm and want_norm not in ("", "단품", "기본"):
-                continue
-            texts.append(body_txt)
+            # UI 필터를 신뢰하지만, 기본/빈 라벨은 무조건 수집
+            if want_norm in ("", "단품", "기본") or normalize_option_label(opt_txt) == want_norm or True:
+                texts.append(body_txt)
             if len(texts) >= limit: break
         stagnate = 0 if cur_len > seen else stagnate
         seen = cur_len
@@ -174,17 +177,62 @@ def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10)
             if len(texts) >= limit: break
     return texts
 
+# -------- 라벨 추출(강화) --------
+def get_radio_label_strong(driver, opt_radio) -> str:
+    """
+    옵션 라벨을 최대한 튼튼하게 얻는다.
+    1) 형제 .txt/.text/.name
+    2) 가장 가까운 상위 label의 텍스트
+    3) aria-label / title / value / data-* 속성
+    4) input[id] -> label[for=id]
+    5) 가장 가까운 li 내부의 .txt/.text/.name
+    """
+    # 1) 형제 텍스트
+    try:
+        t = opt_radio.find_element(By.XPATH, "following-sibling::*[contains(@class,'txt') or contains(@class,'text') or contains(@class,'name')]").text.strip()
+        if t: return t
+    except: pass
+    # 2) 상위 label
+    try:
+        t = opt_radio.find_element(By.XPATH, "ancestor::label[1]").text.strip()
+        if t: return t
+    except: pass
+    # 3) 속성들
+    for attr in ["aria-label", "title", "value", "data-name", "data-label", "data-opt-nm", "data-opt-name"]:
+        try:
+            v = (opt_radio.get_attribute(attr) or "").strip()
+            if v: return v
+        except: pass
+    # 4) for=id
+    try:
+        _id = opt_radio.get_attribute("id")
+        if _id:
+            t = driver.find_element(By.CSS_SELECTOR, f"label[for='{_id}']").text.strip()
+            if t: return t
+    except: pass
+    # 5) li 내부
+    try:
+        li = opt_radio.find_element(By.XPATH, "ancestor::li[1]")
+        t = li.find_element(By.CSS_SELECTOR, ".txt, .text, .name").text.strip()
+        if t: return t
+    except: pass
+    return ""
+
+# -------- 옵션 순회 --------
 def collect_reviews_per_radio_option(driver, max_reviews=10):
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
     option_recs = []
 
+    # 드롭다운 펼치기(있으면)
     try:
         dropdown_btn = driver.find_element(By.CSS_SELECTOR, ".sel_option.item.all")
         driver.execute_script("arguments[0].click();", dropdown_btn)
-        time.sleep(0.3)
-    except: pass
+        time.sleep(0.25)
+    except: 
+        pass
 
+    # 옵션 목록
     try:
         radio_options = driver.find_elements(By.CSS_SELECTOR, ".opt-radio")
     except:
@@ -196,40 +244,79 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
 
     for opt_radio in radio_options:
         try:
-            try:
-                review_name = opt_radio.find_element(By.XPATH, "following-sibling::span[contains(@class,'txt')]").text.strip()
-            except:
-                review_name = opt_radio.text.strip()
-            if review_name == "전체": continue
+            # li 부모 요소 가져오기
+            li_parent = opt_radio.find_element(By.XPATH, "ancestor::li[1]")
 
+            # 비활성화(off) 옵션이면 건너뛰기
+            li_class = li_parent.get_attribute("class") or ""
+            if "off" in li_class.lower():
+                continue  # 아예 수집하지 않음
+
+            # 클릭 전 라벨 시도
+            review_name = get_radio_label_strong(driver, opt_radio).strip()
+            if review_name == "전체":
+                continue
+
+            # 클릭(스크롤 보정 포함)
+            try:
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", opt_radio)
+                time.sleep(0.05)
+            except: pass
             driver.execute_script("arguments[0].click();", opt_radio)
-            WebDriverWait(driver, 5).until(lambda d: len(find_review_items(d)) > 0)
-            time.sleep(0.5)
+
+            WebDriverWait(driver, 7).until(lambda d: len(find_review_items(d)) > 0)
+            time.sleep(0.35)
+
+            # 클릭 후 라벨 재시도(렌더 후 텍스트가 달라질 수 있음)
+            if not review_name:
+                review_name = get_radio_label_strong(driver, opt_radio).strip()
+
+            # 그래도 없으면 첫 리뷰의 [옵션] 텍스트로 폴백
+            if not review_name:
+                items = find_review_items(driver)
+                if items:
+                    opt_txt, _ = extract_option_and_body(items[0])
+                    if opt_txt.strip():
+                        review_name = opt_txt.strip()
+
+            # 마지막 폴백
+            if not review_name:
+                review_name = "미상옵션"
 
             texts = collect_review_texts_for_option(driver, review_name, limit=max_reviews)
             option_recs.append((review_name, texts))
+
         except Exception as e:
             print(f"Error processing option: {e}")
-            option_recs.append(("옵션", []))
+            # 실패해도 빈 라벨로는 저장하지 않음
+            continue
+
 
     return option_recs
 
 # ---------------- 메인 ----------------
 def crawl_oliveyoung_reviews_radio_debug():
     chrome_options = uc.ChromeOptions()
-    chrome_options.add_argument("--window-size=1200,800")
+    
+    # 브라우저 기본 설정
+    chrome_options.add_argument("--window-size=1200,800")   # 창 크기
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--lang=ko-KR")
+
+    # 헤더 강화
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
+
+    # 드라이버 실행
     driver = uc.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
+
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
@@ -239,7 +326,7 @@ def crawl_oliveyoung_reviews_radio_debug():
     products = []
     try:
         for idx, url in enumerate(PRODUCT_URLS, 1):
-            driver.get(url)
+            driver.get(url)  # 맨 앞으로 창 띄우기
             time.sleep(1)
             
             # 브랜드, 제품명, 가격, 메인 이미지
@@ -283,7 +370,7 @@ def crawl_oliveyoung_reviews_radio_debug():
     finally:
         try:
             driver.quit()
-            atexit.unregister(driver.quit)  # 자동 quit 해제
+            atexit.unregister(driver.quit)
         except:
             pass
         finally:
