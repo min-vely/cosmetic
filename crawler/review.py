@@ -1,15 +1,12 @@
 import time, json, re, os, html, unicodedata, string
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
+import atexit
 
 PRODUCT_URLS = [
-    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000177984&dispCatNo=100000100020006",
-    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000213153&dispCatNo=100000100020006"
+    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000229303"
 ]
 MAX_REVIEWS_PER_OPTION = 10
 
@@ -21,12 +18,15 @@ def sanitize_text(s: str) -> str:
               .replace("\u200B","").replace("\ufeff","")
               .replace("\r\n","\n").replace("\r","\n")).strip()
 
-def get_text_safe(scope, selectors):
+def get_text_safe_wait(driver, selectors, timeout=8):
     for sel in selectors:
         try:
-            t = scope.find_element(By.CSS_SELECTOR, sel).text.strip()
-            if t: return t
-        except: pass
+            el = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+            )
+            txt = el.text.strip()
+            if txt: return txt
+        except: continue
     return ""
 
 def num_only(s: str) -> str:
@@ -65,15 +65,11 @@ def open_review_tab(driver):
         (By.CSS_SELECTOR, "button[data-tab*='review']"),
     ]:
         if click_if_present(driver, loc, by=by, timeout=3):
-            time.sleep(0.2); break
-    # 리뷰 영역으로 스크롤
-    for css in ["#gdasList","#gdasReview",".review_list",".gdas_area",
-                "#goodsEvaluation",".review_wrap","#review","#gdas"]:
-        try:
-            driver.execute_script(
-                "var el=document.querySelector(arguments[0]); if(el){el.scrollIntoView({block:'center'});}", css)
-            time.sleep(0.2); break
-        except: pass
+            time.sleep(0.3)
+            break
+    # 리뷰 영역 스크롤
+    driver.execute_script("window.scrollBy(0, 400);")
+    time.sleep(0.5)
 
 def wait_review_container(driver, timeout=8):
     cands = ["ul#gdasList",".review_list","ul#reviewList","ul.gdas_list",
@@ -103,7 +99,9 @@ def click_load_more_reviews(driver):
         try:
             el = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((by, loc)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            time.sleep(0.1); el.click(); return True
+            time.sleep(0.2)
+            el.click()
+            return True
         except: continue
     return False
 
@@ -177,66 +175,59 @@ def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10)
     return texts
 
 def collect_reviews_per_radio_option(driver, max_reviews=10):
-    """
-    '전체 상품 옵션' 클릭 후, 두 번째 라디오 옵션부터 리뷰 수집
-    """
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
-
     option_recs = []
 
-    # 전체 옵션 버튼 클릭
     try:
         dropdown_btn = driver.find_element(By.CSS_SELECTOR, ".sel_option.item.all")
         driver.execute_script("arguments[0].click();", dropdown_btn)
         time.sleep(0.3)
-    except:
-        pass
+    except: pass
 
-    # 라디오 옵션 가져오기 (.opt-radio)
     try:
         radio_options = driver.find_elements(By.CSS_SELECTOR, ".opt-radio")
     except:
         radio_options = []
 
-    if not radio_options or len(radio_options) < 2:
-        # 라디오 옵션 없거나 1개만 있으면 단품 처리
+    if not radio_options:
         option_recs.append(("단품", collect_review_texts_for_option(driver, "단품", limit=max_reviews)))
         return option_recs
 
-    # 두 번째 옵션부터 순회
-    for opt in radio_options[1:]:
+    for opt_radio in radio_options:
         try:
-            label = opt.text.strip() or "옵션"
-            driver.execute_script("arguments[0].click();", opt)
-            
-            # 리뷰 영역 로딩 대기
-            WebDriverWait(driver, 5).until(lambda d: len(find_review_items(d)) >= 0)
+            try:
+                review_name = opt_radio.find_element(By.XPATH, "following-sibling::span[contains(@class,'txt')]").text.strip()
+            except:
+                review_name = opt_radio.text.strip()
+            if review_name == "전체": continue
+
+            driver.execute_script("arguments[0].click();", opt_radio)
+            WebDriverWait(driver, 5).until(lambda d: len(find_review_items(d)) > 0)
             time.sleep(0.5)
 
-            texts = collect_review_texts_for_option(driver, label, limit=max_reviews)
-            option_recs.append((label, texts))
-        except:
-            option_recs.append((label, []))
+            texts = collect_review_texts_for_option(driver, review_name, limit=max_reviews)
+            option_recs.append((review_name, texts))
+        except Exception as e:
+            print(f"Error processing option: {e}")
+            option_recs.append(("옵션", []))
 
     return option_recs
 
-
 # ---------------- 메인 ----------------
 def crawl_oliveyoung_reviews_radio_debug():
-    chrome_options = Options()
-    chrome_options.add_argument("--window-size=1366,900")
+    chrome_options = uc.ChromeOptions()
+    chrome_options.add_argument("--window-size=1200,800")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--lang=ko-KR")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver = uc.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
 
@@ -250,31 +241,35 @@ def crawl_oliveyoung_reviews_radio_debug():
         for idx, url in enumerate(PRODUCT_URLS, 1):
             driver.get(url)
             time.sleep(1)
-            brand = get_text_safe(driver, ["p.prd_brand a",".brand_name a",".brand_name"])
-            name  = get_text_safe(driver, ["p.prd_name","h2.prd_name",".prd_info h2","h2.goods_txt","h1"])
+            
+            # 브랜드, 제품명, 가격, 메인 이미지
+            brand = get_text_safe_wait(driver, ["p.prd_brand a",".brand_name a",".brand_name"])
+            name  = get_text_safe_wait(driver, ["p.prd_name","h2.prd_name",".prd_info h2","h2.goods_txt","h1"])
             price = ""
             for sel in [".price-2","span.price-1 span.num",".total_price .num"]:
                 try:
-                    txt = driver.find_element(By.CSS_SELECTOR, sel).text.strip()
+                    txt = get_text_safe_wait(driver, [sel], timeout=3)
                     digits = num_only(txt)
                     if digits: price = digits; break
                 except: pass
             main_img = ""
             for sel in ["div.prd_thumb img",".thumb img",".prd_img img",".left_area .img img",".imgArea img"]:
                 try:
-                    el = driver.find_element(By.CSS_SELECTOR, sel)
+                    el = WebDriverWait(driver,3).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+                    )
                     src = el.get_attribute("src") or el.get_attribute("data-src") or ""
                     if src: main_img = src; break
                 except: pass
 
             option_reviews = collect_reviews_per_radio_option(driver, max_reviews=MAX_REVIEWS_PER_OPTION)
-            for code_name, texts in option_reviews:
+            for review_name, texts in option_reviews:
                 rec = {
                     "brand_name": brand,
                     "product_name": name,
                     "price": price,
                     "product_main_image": main_img,
-                    "code_name": code_name,
+                    "review_name": review_name,
                     "product_url": url
                 }
                 for j, txt in enumerate(texts, start=1):
@@ -283,14 +278,21 @@ def crawl_oliveyoung_reviews_radio_debug():
                     for j in range(1, MAX_REVIEWS_PER_OPTION+1):
                         rec[f"text{j}"] = ""
                 products.append(rec)
-            print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료")
 
+            print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료")
     finally:
-        try: driver.quit()
-        except: pass
+        try:
+            driver.quit()
+            atexit.unregister(driver.quit)  # 자동 quit 해제
+        except:
+            pass
+        finally:
+            del driver
+
         with open(OUT_PATH, "w", encoding="utf-8") as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
         print(f"{len(products)}건 저장 완료 -> {OUT_PATH}")
+
 
 if __name__ == "__main__":
     t0 = time.time()
