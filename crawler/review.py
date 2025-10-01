@@ -18,9 +18,28 @@ sys.path.append(os.path.join(BASE_DIR, ".."))  # cosmetic 상위 폴더를 path�
 
 from preprocessing.preprocessing import OliveYoungPreprocessor  # ⚡ 여기서 import
 
-PRODUCT_URLS = [
-    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000161007"
-]
+CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
+PRODUCT_URLS = []
+
+def fetch_product_urls(driver):
+    driver.get(CATEGORY_URL)
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_all_elements_located(
+            (By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]")
+        )
+    )
+    anchors = driver.find_elements(
+        By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]"
+    )
+    seen = set()
+    urls = []
+    for a in anchors:
+        href = (a.get_attribute("href") or "").strip()
+        if href and href not in seen:
+            seen.add(href)
+            urls.append(href)
+    return urls[:48]  # 최대 48개
+
 MAX_REVIEWS_PER_OPTION = 10
 
 # ---------------- 기존 유틸 함수 그대로 ----------------
@@ -331,6 +350,37 @@ def crawl_oliveyoung_reviews_and_preprocess():
 
     products = []
     try:
+        # ---------------- 1. 카테고리에서 48개 상품 URL 수집 ----------------
+        CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
+        driver.get(CATEGORY_URL)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located(
+                (By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]")
+            )
+        )
+        anchors = driver.find_elements(
+            By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]"
+        )
+        seen = set()
+        PRODUCT_URLS = []
+        for a in anchors:
+            href = (a.get_attribute("href") or "").strip()
+            if not href:
+                continue
+            # goodsNo만 추출
+            m = re.search(r"goodsNo=(\w+)", href)
+            if not m:
+                continue
+            goods_no = m.group(1)
+            clean_url = f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
+            if clean_url not in seen:
+                seen.add(clean_url)
+                PRODUCT_URLS.append(clean_url)
+
+        PRODUCT_URLS = PRODUCT_URLS[:48]  # 최대 48개
+        print(f"[INFO] {len(PRODUCT_URLS)}개 상품 링크 수집 완료")
+
+        # ---------------- 2. 각 상품 페이지로 이동하여 리뷰 수집 ----------------
         for idx, url in enumerate(PRODUCT_URLS, 1):
             driver.get(url)
             time.sleep(1)
