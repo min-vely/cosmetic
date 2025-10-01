@@ -20,29 +20,9 @@ from preprocessing.preprocessing import OliveYoungPreprocessor  # ⚡ 여기서 
 
 CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
 PRODUCT_URLS = []
-
-def fetch_product_urls(driver):
-    driver.get(CATEGORY_URL)
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_all_elements_located(
-            (By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]")
-        )
-    )
-    anchors = driver.find_elements(
-        By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]"
-    )
-    seen = set()
-    urls = []
-    for a in anchors:
-        href = (a.get_attribute("href") or "").strip()
-        if href and href not in seen:
-            seen.add(href)
-            urls.append(href)
-    return urls[:48]  # 최대 48개
-
 MAX_REVIEWS_PER_OPTION = 10
 
-# ---------------- 기존 유틸 함수 그대로 ----------------
+# ---------------- 유틸 함수 ----------------
 def sanitize_text(s: str) -> str:
     if not isinstance(s, str): return s
     return (s.replace("\u2028","\n").replace("\u2029","\n")
@@ -58,7 +38,7 @@ def get_text_safe_wait(driver, selectors, timeout=8):
             )
             txt = el.text.strip()
             if txt: return txt
-        except: 
+        except:
             continue
     return ""
 
@@ -75,8 +55,7 @@ def click_if_present(driver, locator, by=By.CSS_SELECTOR, timeout=2):
         return False
 
 def normalize_option_label(s: str) -> str:
-    if not s:
-        return ""
+    if not s: return ""
     s = unicodedata.normalize("NFKC", s)
     s = s.replace("[옵션]", "")
     s = re.sub(r"\[[^\]]+\]", "", s)
@@ -87,6 +66,269 @@ def normalize_option_label(s: str) -> str:
     s = s.lower()
     s = re.sub(r"[\s" + re.escape(string.punctuation) + r"]+", "", s)
     return s.strip()
+
+# ---------------- 팝업 원천 차단 + 즉시 제거 ----------------
+def inject_popup_killer(driver):
+    """
+    옵션 클릭/더보기 시 뜨는 '큐레이션/추천상품' 레이어를 최대한 예방 + 즉시 제거.
+    - curation.popClose() 호출, 닫기 버튼(.layer_close.type4) 클릭, recoGoodsYn=N
+    - 딤(.dim/.dimmed 등) 클릭 + 숨김
+    - 네트워크 요청 차단(추천/curation 관련), 스크롤 락 해제
+    """
+    js = r"""
+    (function(){
+      try {
+        // 0) 추천 팝업 여는 전역 함수가 있으면 무력화
+        try {
+          if (window.curation) {
+            ['popOpen','open','openRecommend','show','showPop','recoOpen'].forEach(fn=>{
+              try{ if (typeof window.curation[fn]==='function'){ window.curation[fn]=function(){}; } }catch(e){}
+            });
+          }
+        } catch(e){}
+
+        // 1) 추천/큐레이션 관련 네트워크 차단
+        const BLOCK_PATTERNS = [/recommend/i, /recom/i, /curation/i, /popup/i, /gdasRecommend/i];
+        const origFetch = window.fetch;
+        window.fetch = function(input, init){
+          try {
+            const url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+            if (url && BLOCK_PATTERNS.some(p=>p.test(url))) {
+              return Promise.resolve(new Response(JSON.stringify({}), {status: 204}));
+            }
+          } catch(e){}
+          return origFetch.apply(this, arguments);
+        };
+        const origOpen = window.XMLHttpRequest && window.XMLHttpRequest.prototype.open;
+        if (origOpen) {
+          XMLHttpRequest.prototype.open = function(method, url){
+            try { if (url && BLOCK_PATTERNS.some(p=>p.test(url))) { this.send = function(){}; } } catch(e){}
+            return origOpen.apply(this, arguments);
+          };
+        }
+
+        // 2) DOM 붙자마자 닫기/숨김
+        const POPUP_SEL = [
+          '.popup_layer','.ly_popup','.modal','.layer_pop',
+          '.recommend-popup','.recommend_layer','.layer_recommend',
+          '.prd_recommend','.prd-recommend','.curation','.curation_wrap',
+          '.curation-area','#recomPop','[role="dialog"]','.layer_cont4.w900'
+        ];
+        const CLOSE_SEL = [
+          '.btn_close','.popup_close','.ly_close','.modal-close','.btnClose','.btn_layer_close',
+          'button.layer_close.type4','.oy-sp-gnb .btn-close',
+          'button[aria-label="닫기"]','button[title="닫기"]',
+          'button[class*="close"]','a[class*="close"]'
+        ];
+        const DIM_SEL = ['.dim','.dimmed','.overlay','.modal-backdrop','.oyDimmed'];
+
+        function killScrollLock(){
+          try {
+            document.body.style.overflow = 'auto';
+            document.documentElement.style.overflow = 'auto';
+            document.body.classList.remove('no-scroll','fixed','overflow-hidden');
+          } catch(e){}
+        }
+
+        function clickXTextual(el){
+          try{
+            const cand = el.querySelectorAll('button, a');
+            for (const b of cand){
+              const t = (b.innerText||'').trim();
+              if (t === '×' || t === '✕') { b.click(); return true; }
+            }
+          }catch(e){}
+          return false;
+        }
+
+        function directClose(){
+          try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
+          try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
+          try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
+        }
+
+        function hideOrRemove(node){
+          try {
+            if (!node || !node.querySelector) return false;
+            let matched = false;
+
+            directClose();
+
+            for (const s of POPUP_SEL) {
+              const el = node.matches && node.matches(s) ? node : node.querySelector(s);
+              if (!el) continue;
+
+              let closed = false;
+              for (const cs of CLOSE_SEL) {
+                const btn = el.querySelector(cs);
+                if (btn && getComputedStyle(btn).display !== 'none' && getComputedStyle(btn).visibility !== 'hidden') {
+                  btn.click(); closed = true; matched = true; break;
+                }
+              }
+              if (!closed) { closed = clickXTextual(el); if (closed) matched = true; }
+
+              if (!closed){
+                el.style.setProperty('display','none','important');
+                el.style.setProperty('visibility','hidden','important');
+                el.style.setProperty('z-index','-1','important');
+                matched = true;
+              }
+            }
+
+            // 딤 클릭 + 숨김
+            for (const ds of DIM_SEL){
+              document.querySelectorAll(ds).forEach(d=>{
+                try{ d.click(); }catch(e){}
+                d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';
+              });
+            }
+
+            if (matched) killScrollLock();
+            return matched;
+          } catch(e){ return false; }
+        }
+
+        hideOrRemove(document);
+        const mo = new MutationObserver(muts=>{
+          for (const m of muts) { m.addedNodes && m.addedNodes.forEach(n=>hideOrRemove(n)); }
+        });
+        mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
+        setInterval(()=>hideOrRemove(document), 400);
+
+        window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') hideOrRemove(document); }, true);
+        window.open = function(){ return null; };
+      } catch(e) {}
+    })();
+    """
+    try:
+        driver.execute_script(js)
+    except Exception:
+        pass
+
+# ---------------- 강제 닫기 (Selenium 측) ----------------
+def close_interfering_popup_strong(driver, max_attempts=2):
+    popup_selectors = [
+        ".popup_layer",".ly_popup",".modal",".layer_pop",
+        ".recommend-popup",".recommend_layer",".layer_recommend",
+        ".prd_recommend",".prd-recommend",".curation",".curation_wrap",
+        ".curation-area","#recomPop","[role='dialog']", ".layer_cont4.w900"
+    ]
+    close_btn_selectors = [
+        ".btn_close",".popup_close",".ly_close",".modal-close",".btnClose",".btn_layer_close",
+        "button.layer_close.type4",".oy-sp-gnb .btn-close",
+        "button[aria-label='닫기']","button[title='닫기']",
+        "button[class*='close']","a[class*='close']"
+    ]
+    dim_selectors = [".dim",".dimmed",".overlay",".modal-backdrop",".oyDimmed"]
+
+    def _kill_scroll_lock():
+        try:
+            driver.execute_script("""
+                document.body.style.overflow='auto';
+                document.documentElement.style.overflow='auto';
+                document.body.classList.remove('no-scroll','fixed','overflow-hidden');
+            """)
+        except: pass
+
+    def _direct_close_js():
+        try:
+            driver.execute_script("""
+              try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
+              try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
+              try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
+            """)
+        except: pass
+
+    for _ in range(max_attempts):
+        closed = False
+
+        # ESC
+        try:
+            driver.switch_to.default_content()
+            driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}));")
+        except: pass
+
+        _direct_close_js()
+
+        # 일반 팝업
+        for sel in popup_selectors:
+            try:
+                for p in driver.find_elements(By.CSS_SELECTOR, sel):
+                    if not p.is_displayed(): continue
+                    btn_clicked = False
+                    for bsel in close_btn_selectors:
+                        try:
+                            for btn in p.find_elements(By.CSS_SELECTOR, bsel):
+                                if btn.is_displayed():
+                                    driver.execute_script("arguments[0].click();", btn)
+                                    time.sleep(0.02)
+                                    btn_clicked = True; closed = True; break
+                        except: continue
+                        if btn_clicked: break
+                    if not btn_clicked:
+                        try:
+                            driver.execute_script(
+                                "arguments[0].style.display='none';"
+                                "arguments[0].style.visibility='hidden';"
+                                "arguments[0].style.zIndex='-1';", p)
+                            closed = True
+                        except: pass
+            except: pass
+
+        # iframe 내부
+        try:
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            for f in iframes:
+                try:
+                    driver.switch_to.frame(f)
+                    _direct_close_js()
+                    for sel in popup_selectors:
+                        try:
+                            for p in driver.find_elements(By.CSS_SELECTOR, sel):
+                                if not p.is_displayed(): continue
+                                btn_clicked = False
+                                for bsel in close_btn_selectors:
+                                    try:
+                                        for btn in p.find_elements(By.CSS_SELECTOR, bsel):
+                                            if btn.is_displayed():
+                                                driver.execute_script("arguments[0].click();", btn)
+                                                time.sleep(0.02)
+                                                btn_clicked = True; closed = True; break
+                                    except: continue
+                                    if btn_clicked: break
+                                if not btn_clicked:
+                                    try:
+                                        driver.execute_script(
+                                            "arguments[0].style.display='none';"
+                                            "arguments[0].style.visibility='hidden';"
+                                            "arguments[0].style.zIndex='-1';", p)
+                                        closed = True
+                                    except: pass
+                        except: pass
+                except: pass
+                finally:
+                    try: driver.switch_to.default_content()
+                    except: pass
+        except: pass
+
+        # 딤 클릭 + 숨김
+        try:
+            for ds in dim_selectors:
+                for d in driver.find_elements(By.CSS_SELECTOR, ds):
+                    try: driver.execute_script("arguments[0].click();", d)
+                    except: pass
+                    try:
+                        driver.execute_script(
+                            "arguments[0].style.display='none';"
+                            "arguments[0].style.visibility='hidden';"
+                            "arguments[0].style.zIndex='-1';", d)
+                        closed = True
+                    except: pass
+        except: pass
+
+        _kill_scroll_lock()
+        if not closed: break
+        time.sleep(0.05)
 
 # ---------------- 리뷰 관련 ----------------
 def open_review_tab(driver):
@@ -100,7 +342,6 @@ def open_review_tab(driver):
         if click_if_present(driver, loc, by=by, timeout=3):
             time.sleep(0.3)
             break
-    # 리뷰 영역 스크롤
     driver.execute_script("window.scrollBy(0, 400);")
     time.sleep(0.5)
 
@@ -134,8 +375,18 @@ def click_load_more_reviews(driver):
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.2)
             el.click()
+
+            # 클릭 직후 초고속 스윕
+            driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}));")
+            close_interfering_popup_strong(driver, max_attempts=1)
+            driver.execute_script("""
+              try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
+              try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
+              try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
+              document.querySelectorAll('.dim,.dimmed,.overlay,.modal-backdrop,.oyDimmed').forEach(d=>{try{d.click()}catch(e){} d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';});
+            """)
             return True
-        except: 
+        except:
             continue
     return False
 
@@ -173,7 +424,6 @@ def extract_option_and_body(it):
     return sanitize_text(opt), sanitize_text(body)
 
 def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10):
-    # 현재 화면이 해당 옵션으로 필터된다고 가정하고 수집
     want_norm = normalize_option_label(code_name_raw)
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
@@ -189,20 +439,32 @@ def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10)
             time.sleep(0.6)
             items = find_review_items(driver)
             cur_len = len(items)
+
         for it in items[seen:]:
             try:
                 more = it.find_element(By.XPATH, ".//button[contains(.,'더보기')]|.//a[contains(.,'더보기')]")
                 if more.is_displayed():
                     driver.execute_script("arguments[0].click();", more)
+                    # 클릭 직후 초고속 스윕
+                    driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}));")
+                    close_interfering_popup_strong(driver, max_attempts=1)
+                    driver.execute_script("""
+                      try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
+                      try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
+                      try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
+                      document.querySelectorAll('.dim,.dimmed,.overlay,.modal-backdrop,.oyDimmed').forEach(d=>{try{d.click()}catch(e){} d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';});
+                    """)
                     time.sleep(0.1)
             except: pass
+
             opt_txt, body_txt = extract_option_and_body(it)
-            # UI 필터를 신뢰하지만, 기본/빈 라벨은 무조건 수집
             if want_norm in ("", "단품", "기본") or normalize_option_label(opt_txt) == want_norm or True:
                 texts.append(body_txt)
             if len(texts) >= limit: break
+
         stagnate = 0 if cur_len > seen else stagnate
         seen = cur_len
+
     if not texts:
         for it in find_review_items(driver):
             texts.append(extract_option_and_body(it)[1])
@@ -211,38 +473,25 @@ def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10)
 
 # -------- 라벨 추출(강화) --------
 def get_radio_label_strong(driver, opt_radio) -> str:
-    """
-    옵션 라벨을 최대한 튼튼하게 얻는다.
-    1) 형제 .txt/.text/.name
-    2) 가장 가까운 상위 label의 텍스트
-    3) aria-label / title / value / data-* 속성
-    4) input[id] -> label[for=id]
-    5) 가장 가까운 li 내부의 .txt/.text/.name
-    """
-    # 1) 형제 텍스트
     try:
         t = opt_radio.find_element(By.XPATH, "following-sibling::*[contains(@class,'txt') or contains(@class,'text') or contains(@class,'name')]").text.strip()
         if t: return t
     except: pass
-    # 2) 상위 label
     try:
         t = opt_radio.find_element(By.XPATH, "ancestor::label[1]").text.strip()
         if t: return t
     except: pass
-    # 3) 속성들
     for attr in ["aria-label", "title", "value", "data-name", "data-label", "data-opt-nm", "data-opt-name"]:
         try:
             v = (opt_radio.get_attribute(attr) or "").strip()
             if v: return v
         except: pass
-    # 4) for=id
     try:
         _id = opt_radio.get_attribute("id")
         if _id:
             t = driver.find_element(By.CSS_SELECTOR, f"label[for='{_id}']").text.strip()
             if t: return t
     except: pass
-    # 5) li 내부
     try:
         li = opt_radio.find_element(By.XPATH, "ancestor::li[1]")
         t = li.find_element(By.CSS_SELECTOR, ".txt, .text, .name").text.strip()
@@ -256,15 +505,13 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
     wait_review_container(driver, timeout=8)
     option_recs = []
 
-    # 드롭다운 펼치기(있으면)
     try:
         dropdown_btn = driver.find_element(By.CSS_SELECTOR, ".sel_option.item.all")
         driver.execute_script("arguments[0].click();", dropdown_btn)
         time.sleep(0.25)
-    except: 
+    except:
         pass
 
-    # 옵션 목록
     try:
         radio_options = driver.find_elements(By.CSS_SELECTOR, ".opt-radio")
     except:
@@ -276,42 +523,41 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
 
     for opt_radio in radio_options:
         try:
-            # li 부모 요소 가져오기
             li_parent = opt_radio.find_element(By.XPATH, "ancestor::li[1]")
-
-            # 비활성화(off) 옵션이면 건너뛰기
             li_class = li_parent.get_attribute("class") or ""
             if "off" in li_class.lower():
-                continue  # 아예 수집하지 않음
+                continue
 
-            # 클릭 전 라벨 시도
             review_name = get_radio_label_strong(driver, opt_radio).strip()
             if review_name == "전체":
                 continue
 
-            # 클릭(스크롤 보정 포함)
-            try:
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", opt_radio)
-                time.sleep(0.05)
-            except: pass
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", opt_radio)
+            time.sleep(0.05)
             driver.execute_script("arguments[0].click();", opt_radio)
+
+            # 클릭 직후 초고속 스윕
+            driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}));")
+            close_interfering_popup_strong(driver, max_attempts=1)
+            driver.execute_script("""
+              try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
+              try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
+              try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
+              document.querySelectorAll('.dim,.dimmed,.overlay,.modal-backdrop,.oyDimmed').forEach(d=>{try{d.click()}catch(e){} d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';});
+            """)
+            time.sleep(0.2)
 
             WebDriverWait(driver, 7).until(lambda d: len(find_review_items(d)) > 0)
             time.sleep(0.35)
 
-            # 클릭 후 라벨 재시도(렌더 후 텍스트가 달라질 수 있음)
             if not review_name:
                 review_name = get_radio_label_strong(driver, opt_radio).strip()
-
-            # 그래도 없으면 첫 리뷰의 [옵션] 텍스트로 폴백
             if not review_name:
                 items = find_review_items(driver)
                 if items:
                     opt_txt, _ = extract_option_and_body(items[0])
                     if opt_txt.strip():
                         review_name = opt_txt.strip()
-
-            # 마지막 폴백
             if not review_name:
                 review_name = "미상옵션"
 
@@ -320,9 +566,7 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
 
         except Exception as e:
             print(f"Error processing option: {e}")
-            # 실패해도 빈 라벨로는 저장하지 않음
             continue
-
 
     return option_recs
 
@@ -343,6 +587,9 @@ def crawl_oliveyoung_reviews_and_preprocess():
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
 
+    # ★ 드라이버 생성 직후 주입
+    inject_popup_killer(driver)
+
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     OUT_PATH_RAW = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_raw.json")
@@ -350,8 +597,6 @@ def crawl_oliveyoung_reviews_and_preprocess():
 
     products = []
     try:
-        # ---------------- 1. 카테고리에서 48개 상품 URL 수집 ----------------
-        CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
         driver.get(CATEGORY_URL)
         WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located(
@@ -365,33 +610,34 @@ def crawl_oliveyoung_reviews_and_preprocess():
         PRODUCT_URLS = []
         for a in anchors:
             href = (a.get_attribute("href") or "").strip()
-            if not href:
-                continue
-            # goodsNo만 추출
+            if not href: continue
             m = re.search(r"goodsNo=(\w+)", href)
-            if not m:
-                continue
+            if not m: continue
             goods_no = m.group(1)
             clean_url = f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
             if clean_url not in seen:
                 seen.add(clean_url)
                 PRODUCT_URLS.append(clean_url)
 
-        PRODUCT_URLS = PRODUCT_URLS[:48]  # 최대 48개
+        PRODUCT_URLS = PRODUCT_URLS[:48]
         print(f"[INFO] {len(PRODUCT_URLS)}개 상품 링크 수집 완료")
 
-        # ---------------- 2. 각 상품 페이지로 이동하여 리뷰 수집 ----------------
         for idx, url in enumerate(PRODUCT_URLS, 1):
             driver.get(url)
             time.sleep(1)
-            
+
+            # 진입 직후 혹시 레이어 뜨면 정리
+            close_interfering_popup_strong(driver, max_attempts=1)
+
             brand = get_text_safe_wait(driver, ["p.prd_brand a",".brand_name a",".brand_name"])
             name  = get_text_safe_wait(driver, ["p.prd_name","h2.prd_name",".prd_info h2","h2.goods_txt","h1"])
+
             price = ""
             for sel in [".price-2","span.price-1 span.num",".total_price .num"]:
                 txt = get_text_safe_wait(driver, [sel], timeout=3)
                 digits = num_only(txt)
                 if digits: price = digits; break
+
             main_img = ""
             for sel in ["div.prd_thumb img",".thumb img",".prd_img img",".left_area .img img",".imgArea img"]:
                 try:
@@ -425,20 +671,19 @@ def crawl_oliveyoung_reviews_and_preprocess():
             driver.quit()
             atexit.unregister(driver.quit)
         except: pass
-        finally: del driver
+        try:
+            del driver
+        except: pass
 
-    # ---------------- 저장 (원본) ----------------
     with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
         json.dump(products, f, ensure_ascii=False, indent=2)
     print(f"{len(products)}건 저장 완료 -> {OUT_PATH_RAW}")
 
-    # ---------------- 전처리 적용 ----------------
     processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
     processor.load_json()
     processor.preprocess()
     processor.save_json()
     print(f"{len(processor.products)}건 전처리 후 저장 완료 -> {OUT_PATH_PRE}")
-
 
 if __name__ == "__main__":
     t0 = time.time()
