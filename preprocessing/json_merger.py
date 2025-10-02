@@ -56,33 +56,37 @@ for pname, product_list in product_map.items():
 # ---------------- thumb_color 병합 ----------------
 def merge_thumb_color(items):
     """
-    code_name 단어 기준으로 thumb_color 합치기
+    code_name 완전 일치 기준으로 thumb_color 합치기
     """
+    # code_name별로 index 그룹핑
     name_to_indices = defaultdict(list)
     for i, item in enumerate(items):
-        words = item["code_name"].split()
-        for word in words:
-            name_to_indices[word].append(i)
+        code_name = item.get("code_name", "")
+        if code_name:
+            name_to_indices[code_name].append(i)
 
+    # 각 item의 thumb_color를 동일 code_name 그룹끼리 합치기
     for i, item in enumerate(items):
+        code_name = item.get("code_name", "")
         combined_thumbs = set()
-        # 기존 thumb_color를 리스트로 변환 (혹시 str로 되어있다면)
+
+        # 기존 thumb_color를 리스트로 변환
         current_thumbs = item.get("thumb_color", [])
         if isinstance(current_thumbs, str):
             current_thumbs = [current_thumbs]
         combined_thumbs.update(current_thumbs)
 
-        words = item["code_name"].split()
-        for word in words:
-            for idx in name_to_indices[word]:
-                thumbs = items[idx].get("thumb_color", [])
-                if isinstance(thumbs, str):
-                    thumbs = [thumbs]
-                combined_thumbs.update(thumbs)
+        # 동일 code_name 그룹의 모든 thumb_color 합치기
+        for idx in name_to_indices.get(code_name, []):
+            thumbs = items[idx].get("thumb_color", [])
+            if isinstance(thumbs, str):
+                thumbs = [thumbs]
+            combined_thumbs.update(thumbs)
 
         item["thumb_color"] = list(combined_thumbs)
 
     return items
+
 
 merged_data = merge_thumb_color(merged_data)
 

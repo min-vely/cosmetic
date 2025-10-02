@@ -135,18 +135,36 @@ def crawl_olive_young():
                             lambda d: len(d.find_elements(By.CSS_SELECTOR, ".option_value")) > 0
                         )
                         time.sleep(1)
+
                         option_elements = driver.find_elements(By.CSS_SELECTOR, ".option_value")
-                        thumb_elements = driver.find_elements(By.CSS_SELECTOR, ".thumb-color img")
+                        thumb_divs = driver.find_elements(By.CSS_SELECTOR, ".thumb-color")
 
                         for i_opt, option in enumerate(option_elements):
                             option_name = option.text.strip()
                             thumb_url = ""
-                            if i_opt < len(thumb_elements):
-                                thumb_url = thumb_elements[i_opt].get_attribute("src") or thumb_elements[i_opt].get_attribute("data-src") or ""
+
+                            if i_opt < len(thumb_divs):
+                                div = thumb_divs[i_opt]
+
+                                # hidden input 값 가져오기
+                                try:
+                                    path = div.find_element(By.CSS_SELECTOR, "input[name^='colrCmprImgPathNm_']").get_attribute("value")
+                                    filename = div.find_element(By.CSS_SELECTOR, "input[name^='colrCmprImgNm_']").get_attribute("value")
+
+                                    if path and filename:
+                                        # 원하는 포맷으로 URL 생성
+                                        thumb_url = f"https://image.oliveyoung.co.kr/uploads/images/{path}/{filename}"
+                                except Exception as e:
+                                    print("[THUMB_COLOR BUILD ERROR]", e)
+
                             if option_name:
-                                variants.append({"code_name": option_name, "thumb_color": thumb_url})
+                                variants.append({
+                                    "code_name": option_name,
+                                    "thumb_color": thumb_url
+                                })
                     except:
                         variants = [{"code_name": "단품", "thumb_color": ""}]
+
 
                     # -------- 상세 이미지 수집 --------
                     product_images = []
