@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>💄 RAG Lip Tint Chatbot</title>
+  <style>
+    body {
+      font-family: "Pretendard", sans-serif;
+      background-color: #fff5f8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    #chat-container {
+      width: 500px;
+      max-height: 80vh;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #messages {
+      flex-grow: 1;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .message {
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .user {
+      text-align: right;
+      color: #c64061;
+    }
+    .bot {
+      text-align: left;
+      color: #333;
+    }
+    #input-area {
+      display: flex;
+      border-top: 1px solid #eee;
+    }
+    #user-input {
+      flex-grow: 1;
+      border: none;
+      padding: 12px;
+      font-size: 15px;
+    }
+    #send-btn {
+      background: #c64061;
+      color: white;
+      border: none;
+      padding: 0 18px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    /* 깜박이는 타이핑 애니메이션 */
+    .typing span {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: #333;
+      margin-right: 2px;
+      border-radius: 2px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 50%, 100% { opacity: 0; }
+      25%, 75% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <h2>💄 RAG Lip Tint Chatbot</h2>
+  <div id="chat-container">
+    <div id="messages"></div>
+    <div id="input-area">
+      <input id="user-input" type="text" placeholder="메시지를 입력하세요..." />
+      <button id="send-btn">전송</button>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const messages = document.getElementById("messages");
+
+    function addTypingIndicator() {
+      const container = document.createElement("div");
+      container.className = "message bot typing";
+      container.id = `typing-${Date.now()}`;
+
+      // 점 3개 깜박임
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement("span");
+        dot.style.animationDelay = `${i*0.2}s`;
+        container.appendChild(dot);
+      }
+
+      messages.appendChild(container);
+      messages.scrollTop = messages.scrollHeight;
+      return container.id;
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      // 사용자 메시지 표시
+      messages.innerHTML += `<div class="message user">🙋‍♀️ ${text}</div>`;
+      input.value = "";
+
+      // 타이핑 표시
+      const typingId = addTypingIndicator();
+
+      // 서버에 요청 보내기
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text })
+      });
+      const data = await res.json();
+
+      // 타이핑 제거 후 챗봇 답변 표시
+      const typingElem = document.getElementById(typingId);
+      if (typingElem) typingElem.remove();
+
+      messages.innerHTML += `<div class="message bot">🤖 ${data.response}</div>`;
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", e => {
+      if (e.key === "Enter") sendMessage();
+    });
+  </script>
+</body>
+</html>
