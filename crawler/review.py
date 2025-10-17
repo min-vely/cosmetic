@@ -18,7 +18,7 @@ sys.path.append(os.path.join(BASE_DIR, ".."))  # cosmetic 상위 폴더를 path�
 
 from preprocessing.preprocessing import OliveYoungPreprocessor  # ⚡ 여기서 import
 
-CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
+CATEGORY_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=1000001000200010009&rowsPerPage=48"
 PRODUCT_URLS = []
 MAX_REVIEWS_PER_OPTION = 10
 
@@ -592,8 +592,8 @@ def crawl_oliveyoung_reviews_and_preprocess():
 
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUT_PATH_RAW = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_raw.json")
-    OUT_PATH_PRE = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup_reviews_preprocessed.json")
+    OUT_PATH_RAW = os.path.join(OUTPUT_DIR, "oliveyoung_cushion_reviews_raw.json")
+    OUT_PATH_PRE = os.path.join(OUTPUT_DIR, "oliveyoung_cushion_reviews_preprocessed.json")
 
     products = []
     try:

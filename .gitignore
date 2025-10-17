@@ -1,6 +1,8 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,opencv
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,opencv
 
+chroma_db/
+
 ### OpenCV ###
 #OpenCV for Mac and Linux
 #build and release folders

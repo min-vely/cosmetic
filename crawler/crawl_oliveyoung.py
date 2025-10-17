@@ -17,7 +17,7 @@ sys.path.append(os.path.join(BASE_DIR, ".."))
 from preprocessing.preprocessing import OliveYoungPreprocessor
 
 # ---------------- 설정 ----------------
-CAT_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
+CAT_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=1000001000200010009&rowsPerPage=48"
 MAX_PRODUCTS = 48
 MAX_TABS = 4
 
@@ -63,7 +63,7 @@ def crawl_olive_young():
     products_data = []
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUTPUT_PATH = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup.json")
+    OUTPUT_PATH = os.path.join(OUTPUT_DIR, "oliveyoung_cushion.json")
 
     # 전처리기 생성
     preprocessor = OliveYoungPreprocessor(input_path=None, output_path=None)
@@ -169,6 +169,7 @@ def crawl_olive_young():
                     # -------- 상세 이미지 수집 --------
                     product_images = []
                     try:
+                        # 1️⃣ speedycat 구조 (기존 방식)
                         try:
                             btn = driver.find_element(By.CLASS_NAME, "btn-controller")
                             btn.click()
@@ -197,8 +198,26 @@ def crawl_olive_young():
                                         product_images.append(bg_url)
                             except:
                                 continue
+
+                        # 2️⃣ fallback: 설화수 등 picture 태그 기반 구조
+                        if not product_images:
+                            fallback_imgs = driver.find_elements(By.CSS_SELECTOR, ".prd_detail_cont picture img, #new_detail_wrap picture img")
+                            for img in fallback_imgs:
+                                src = img.get_attribute("src")
+                                if src and src.startswith("https://image.oliveyoung.co.kr/") and "uploads/images/details" in src:
+                                    product_images.append(src)
+
+                        # 3️⃣ fallback 2: 일반적인 detail 영역 img
+                        if not product_images:
+                            alt_imgs = driver.find_elements(By.CSS_SELECTOR, "#goodsImgArea img, .prd_detail_area img")
+                            for img in alt_imgs:
+                                src = img.get_attribute("src")
+                                if src and "uploads/images" in src and not src.startswith("data:image"):
+                                    product_images.append(src)
+
                     except Exception as e:
                         print("[IMAGE COLLECT ERROR]", e)
+
 
                     # -------- 전처리 적용 및 데이터 저장 --------
                     for v in variants:
