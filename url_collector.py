@@ -21,41 +21,43 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 
 # ---------------- Enum 정의 ----------------
 class CategoryEnum(Enum):
-    CUSHION = "1000001000200010009"
-    BLUSH = "1000001000200010006"
-    FOUNDATION = "1000001000200010002"
-    POWDER = "1000001000200010004"
-    CONCEALER = "1000001000200010005"
-    PRIMER = "1000001000200010003"
-    CONTOUR = "1000001000200010007"
-    HIGHLIGHTER = "1000001000200010008"
-    MAKEUP_FIXER = "1000001000200010010"
-    BBNCC = "1000001000200010001"
-    EYELINER = "1000001000200070002"
-    MASCARA = "1000001000200070001"
-    EYEBROW = "1000001000200070004"
-    EYESHADOW = "1000001000200070003"
-    EYELASHCARE = "1000001000200070007"
-    EYEFIXER = "1000001000200070008"
+    # CUSHION = "1000001000200010009"
+    # BLUSH = "1000001000200010006"
+    # FOUNDATION = "1000001000200010002"
+    # POWDER = "1000001000200010004"
+    # CONCEALER = "1000001000200010005"
+    # PRIMER = "1000001000200010003"
+    # CONTOUR = "1000001000200010007"
+    # HIGHLIGHTER = "1000001000200010008"
+    # MAKEUP_FIXER = "1000001000200010010"
+    # BBNCC = "1000001000200010001"
+    # EYELINER = "1000001000200070002"
+    # MASCARA = "1000001000200070001"
+    # EYEBROW = "1000001000200070004"
+    # EYESHADOW = "1000001000200070003"
+    # EYELASHCARE = "1000001000200070007"
+    # EYEFIXER = "1000001000200070008"
+    LIPLINER = "1000001000200060006"
 
 
 CATEGORY_NAME_MAP = {
-    CategoryEnum.CUSHION.value: "cushion",
-    CategoryEnum.BLUSH.value: "blush",
-    CategoryEnum.FOUNDATION.value: "foundation",
-    CategoryEnum.POWDER.value: "powder",
-    CategoryEnum.CONCEALER.value: "concealer",
-    CategoryEnum.PRIMER.value: "primer",
-    CategoryEnum.CONTOUR.value: "contour",
-    CategoryEnum.HIGHLIGHTER.value: "highlighter",
-    CategoryEnum.MAKEUP_FIXER.value: "makeupfixer",
-    CategoryEnum.BBNCC.value: "bbncc",
-    CategoryEnum.EYELINER.value: "eyeliner",
-    CategoryEnum.MASCARA.value: "mascara",
-    CategoryEnum.EYEBROW.value: "eyebrow",
-    CategoryEnum.EYESHADOW.value: "eyeshadow",
-    CategoryEnum.EYELASHCARE.value: "eyelashcare",
-    CategoryEnum.EYEFIXER.value: "eyefixer",
+    # CategoryEnum.CUSHION.value: "cushion",
+    # CategoryEnum.BLUSH.value: "blush",
+    # CategoryEnum.FOUNDATION.value: "foundation",
+    # CategoryEnum.POWDER.value: "powder",
+    # CategoryEnum.CONCEALER.value: "concealer",
+    # CategoryEnum.PRIMER.value: "primer",
+    # CategoryEnum.CONTOUR.value: "contour",
+    # CategoryEnum.HIGHLIGHTER.value: "highlighter",
+    # CategoryEnum.MAKEUP_FIXER.value: "makeupfixer",
+    # CategoryEnum.BBNCC.value: "bbncc",
+    # CategoryEnum.EYELINER.value: "eyeliner",
+    # CategoryEnum.MASCARA.value: "mascara",
+    # CategoryEnum.EYEBROW.value: "eyebrow",
+    # CategoryEnum.EYESHADOW.value: "eyeshadow",
+    # CategoryEnum.EYELASHCARE.value: "eyelashcare",
+    # CategoryEnum.EYEFIXER.value: "eyefixer",
+    CategoryEnum.LIPLINER.value: "lipliner",
 }
 
 CATEGORY_URLS = [

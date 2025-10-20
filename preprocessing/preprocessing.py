@@ -36,36 +36,38 @@ class OliveYoungPreprocessor:
         return name
 
     @classmethod
-    def clean_code_name(self, code: str) -> str:
+    def clean_code_name(cls, code: str) -> str:
         code = code.strip()
 
         # 단독 "단품"이면 그대로 반환
         if code == "단품":
             return code
 
-        # [] 안 내용 제거
+        original_code = code
+
+        # 불필요한 괄호, 이벤트 제거
         code = re.sub(r'\[.*?\]', '', code)
-        # () 안 내용 제거 (대소문자 NEW 포함)
         code = re.sub(r'\(.*?\)', '', code)
-        # (품절) 제거
         code = code.replace('(품절)', '')
-        # \n 뒤 내용 제거
         code = re.sub(r'\n.*$', '', code)
-        # 1+1, 1+2, 2+1 등 제거
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
-        # 용량/종류/개/색상 관련 표현 제거
-        code = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', code, flags=re.IGNORECASE)
-        # NEW, New, new 등 단독 제거
         code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
-
-        # 괄호 제거 후 남은 + 뒤 사은품 제거
-        if '+' in code:
-            code = code.split('+')[0].strip()
-
-        # 앞 구분 문자(_, +, /, 공백)와 함께 '단품', '세트', '기획' 제거
         code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
-        # 남은 공백 정리
+
+        # *N개입 제거
+        code = re.sub(r'\*\s*\d+\s*개입', '', code)
+
+        # 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
+
+        # 남은 문자열에 숫자+단위 제거 조건
+        # 숫자+단위 패턴
+        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors)'
+        
+        # 남은 문자열에 텍스트가 섞여 있으면 숫자+단위 제거
+        if re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
+            code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE)
+            code = code.strip()
 
         return code
 
