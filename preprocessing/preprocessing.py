@@ -24,6 +24,8 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', name, flags=re.IGNORECASE)
         # 단품/기획/한정 기획 제거
         name = re.sub(r'\b(단품|기획|한정\s*기획)\b', '', name)
+        # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
+        name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
         # "중 택1", "중 택2", "택1", "택2" 제거
         name = re.sub(r'\b중\s*택\d+\b', '', name)
         name = re.sub(r'\b택\d+\b', '', name)
