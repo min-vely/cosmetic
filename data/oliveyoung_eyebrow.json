@@ -1816,7 +1816,7 @@
   },
   {
     "brand_name": "페리페라",
-    "product_name": "페리페라 스피디 스키니 브로우 더블기획",
+    "product_name": "페리페라 스피디 스키니 브로우",
     "price": "7900",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0019/A00000019074733ko.jpg?l=ko",
     "code_name": "08 토프베이지",
@@ -1853,7 +1853,7 @@
   },
   {
     "brand_name": "페리페라",
-    "product_name": "페리페라 스피디 스키니 브로우 더블기획",
+    "product_name": "페리페라 스피디 스키니 브로우",
     "price": "7900",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0019/A00000019074733ko.jpg?l=ko",
     "code_name": "09 토프브라운",
@@ -1890,7 +1890,7 @@
   },
   {
     "brand_name": "페리페라",
-    "product_name": "페리페라 스피디 스키니 브로우 더블기획",
+    "product_name": "페리페라 스피디 스키니 브로우",
     "price": "7900",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0019/A00000019074733ko.jpg?l=ko",
     "code_name": "10 피오니토프",
@@ -1927,7 +1927,7 @@
   },
   {
     "brand_name": "페리페라",
-    "product_name": "페리페라 스피디 스키니 브로우 더블기획",
+    "product_name": "페리페라 스피디 스키니 브로우",
     "price": "7900",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0019/A00000019074733ko.jpg?l=ko",
     "code_name": "11 모카토프",
@@ -11034,7 +11034,7 @@
     "product_name": "더샘 커버 퍼펙션 브로우 컨실러 4SKU",
     "price": "9600",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0023/A00000023435302ko.jpg?l=ko",
-    "code_name": "",
+    "code_name": "토프베이지",
     "thumb_color": "",
     "product_url": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000234353",
     "product_images": [
@@ -11065,7 +11065,7 @@
     "product_name": "더샘 커버 퍼펙션 브로우 컨실러 4SKU",
     "price": "9600",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0023/A00000023435302ko.jpg?l=ko",
-    "code_name": "",
+    "code_name": "로즈베이지",
     "thumb_color": "",
     "product_url": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000234353",
     "product_images": [
@@ -11096,7 +11096,7 @@
     "product_name": "더샘 커버 퍼펙션 브로우 컨실러 4SKU",
     "price": "9600",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0023/A00000023435302ko.jpg?l=ko",
-    "code_name": "",
+    "code_name": "1.0 클리어베이지",
     "thumb_color": "",
     "product_url": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000234353",
     "product_images": [
@@ -11127,7 +11127,7 @@
     "product_name": "더샘 커버 퍼펙션 브로우 컨실러 4SKU",
     "price": "9600",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0023/A00000023435302ko.jpg?l=ko",
-    "code_name": "",
+    "code_name": "1.5 내추럴베이지",
     "thumb_color": "",
     "product_url": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=A000000234353",
     "product_images": [
@@ -13300,7 +13300,7 @@
   },
   {
     "brand_name": "에뛰드",
-    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 더블기획_하드 브로우",
+    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 하드 브로우",
     "price": "14000",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0017/A00000017111423ko.jpg?l=ko",
     "code_name": "01 그레이",
@@ -13326,7 +13326,7 @@
   },
   {
     "brand_name": "에뛰드",
-    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 더블기획_하드 브로우",
+    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 하드 브로우",
     "price": "14000",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0017/A00000017111423ko.jpg?l=ko",
     "code_name": "02 그레이 브라운",
@@ -13352,7 +13352,7 @@
   },
   {
     "brand_name": "에뛰드",
-    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 더블기획_하드 브로우",
+    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 하드 브로우",
     "price": "14000",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0017/A00000017111423ko.jpg?l=ko",
     "code_name": "03 다크 브라운",
@@ -13378,7 +13378,7 @@
   },
   {
     "brand_name": "에뛰드",
-    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 더블기획_하드 브로우",
+    "product_name": "에뛰드 더 리얼 아이브로우 오토펜슬 하드 브로우",
     "price": "14000",
     "product_main_image": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/550/10/0000/0017/A00000017111423ko.jpg?l=ko",
     "code_name": "04 피넛 브라운",
