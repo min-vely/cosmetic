@@ -570,6 +570,18 @@ def collect_reviews_per_radio_option(driver, max_reviews=10):
 
     return option_recs
 
+def is_product_unavailable(driver):
+    """
+    상품이 '판매 종료' 또는 '상품을 찾을 수 없습니다' 페이지인지 감지
+    """
+    try:
+        elems = driver.find_elements(By.CSS_SELECTOR, "#error-contents.error-page.noProduct")
+        if len(elems) > 0:
+            return True
+    except:
+        pass
+    return False
+
 # ---------------- 메인 ----------------
 def crawl_oliveyoung_reviews_and_preprocess():
     chrome_options = uc.ChromeOptions()
@@ -586,94 +598,113 @@ def crawl_oliveyoung_reviews_and_preprocess():
     driver = uc.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
     driver.set_script_timeout(20)
-
-    # ★ 드라이버 생성 직후 주입
     inject_popup_killer(driver)
 
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUT_PATH_RAW = os.path.join(OUTPUT_DIR, "oliveyoung_cushion_reviews_raw.json")
-    OUT_PATH_PRE = os.path.join(OUTPUT_DIR, "oliveyoung_cushion_reviews_preprocessed.json")
 
-    products = []
+    SNAP_DIR = os.path.join(BASE_DIR, "..", "snapshots")
+    for file in os.listdir(SNAP_DIR):
+        if not file.endswith(".json"):
+            continue
+        file_path = os.path.join(SNAP_DIR, file)
+        suffix = file.replace("url_", "").replace(".json", "")
+        OUT_PATH_RAW = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_reviews_raw.json")
+        OUT_PATH_PRE = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_reviews_preprocessed.json")
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            PRODUCT_URLS = []
+            for item in data:
+                if isinstance(item, dict):
+                    url = item.get("product_url") or item.get("url")
+                elif isinstance(item, str):
+                    url = item
+                else:
+                    continue
+                if url and url.startswith("https") and "goodsNo=" in url:
+                    PRODUCT_URLS.append(url)
+            PRODUCT_URLS = list(dict.fromkeys(PRODUCT_URLS))
+            print(f"[INFO] {file}에서 {len(PRODUCT_URLS)}개 상품 URL 로드 완료")
+
+            products = []
+            for idx, url in enumerate(PRODUCT_URLS, 1):
+                driver.get(url)
+                time.sleep(1)
+                close_interfering_popup_strong(driver, max_attempts=1)
+
+                # ✅ 판매 종료 상품이면 바로 스킵
+                if is_product_unavailable(driver):
+                    print(f"[SKIP] ({idx}/{len(PRODUCT_URLS)}) 판매 종료된 상품: {url}")
+                    continue
+
+                # -------- 기본 정보 수집 --------
+                brand = get_text_safe_wait(driver, ["p.prd_brand a", ".brand_name a", ".brand_name"])
+                name  = get_text_safe_wait(driver, ["p.prd_name", "h2.prd_name", ".prd_info h2", "h2.goods_txt", "h1"])
+                price = ""
+                for sel in [".price-2", "span.price-1 span.num", ".total_price .num"]:
+                    txt = get_text_safe_wait(driver, [sel], timeout=3)
+                    digits = num_only(txt)
+                    if digits:
+                        price = digits
+                        break
+
+                main_img = ""
+                for sel in ["div.prd_thumb img", ".thumb img", ".prd_img img", ".left_area .img img", ".imgArea img"]:
+                    try:
+                        el = WebDriverWait(driver, 3).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+                        )
+                        src = el.get_attribute("src") or el.get_attribute("data-src") or ""
+                        if src:
+                            main_img = src
+                            break
+                    except:
+                        pass
+
+                # -------- 리뷰 수집 --------
+                option_reviews = collect_reviews_per_radio_option(driver, max_reviews=MAX_REVIEWS_PER_OPTION)
+                for review_name, texts in option_reviews:
+                    rec = {
+                        "brand_name": brand,
+                        "product_name": name,
+                        "price": price,
+                        "product_main_image": main_img,
+                        "review_name": review_name,
+                        "product_url": url,
+                    }
+                    for j, txt in enumerate(texts, start=1):
+                        rec[f"text{j}"] = txt
+                    if not texts:
+                        for j in range(1, MAX_REVIEWS_PER_OPTION + 1):
+                            rec[f"text{j}"] = ""
+                    products.append(rec)
+
+                print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료")
+
+            # -------- 파일 저장 --------
+            with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
+                json.dump(products, f, ensure_ascii=False, indent=2)
+            print(f"{len(products)}건 저장 완료 -> {OUT_PATH_RAW}")
+
+            processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
+            processor.load_json()
+            processor.preprocess()
+            processor.save_json()
+            print(f"{len(processor.products)}건 전처리 후 저장 완료 -> {OUT_PATH_PRE}")
+
+        except Exception as e:
+            print(f"[ERROR] {file} 처리 중 오류: {e}")
+
     try:
-        driver.get(CATEGORY_URL)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]")
-            )
-        )
-        anchors = driver.find_elements(
-            By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]"
-        )
-        seen = set()
-        PRODUCT_URLS = []
-        for a in anchors:
-            href = (a.get_attribute("href") or "").strip()
-            if not href: continue
-            m = re.search(r"goodsNo=(\w+)", href)
-            if not m: continue
-            goods_no = m.group(1)
-            clean_url = f"https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={goods_no}"
-            if clean_url not in seen:
-                seen.add(clean_url)
-                PRODUCT_URLS.append(clean_url)
+        driver.quit()
+        atexit.unregister(driver.quit)
+    except: pass
+    try:
+        del driver
+    except: pass
 
-        PRODUCT_URLS = PRODUCT_URLS[:48]
-        print(f"[INFO] {len(PRODUCT_URLS)}개 상품 링크 수집 완료")
-
-        for idx, url in enumerate(PRODUCT_URLS, 1):
-            driver.get(url)
-            time.sleep(1)
-
-            # 진입 직후 혹시 레이어 뜨면 정리
-            close_interfering_popup_strong(driver, max_attempts=1)
-
-            brand = get_text_safe_wait(driver, ["p.prd_brand a",".brand_name a",".brand_name"])
-            name  = get_text_safe_wait(driver, ["p.prd_name","h2.prd_name",".prd_info h2","h2.goods_txt","h1"])
-
-            price = ""
-            for sel in [".price-2","span.price-1 span.num",".total_price .num"]:
-                txt = get_text_safe_wait(driver, [sel], timeout=3)
-                digits = num_only(txt)
-                if digits: price = digits; break
-
-            main_img = ""
-            for sel in ["div.prd_thumb img",".thumb img",".prd_img img",".left_area .img img",".imgArea img"]:
-                try:
-                    el = WebDriverWait(driver,3).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, sel))
-                    )
-                    src = el.get_attribute("src") or el.get_attribute("data-src") or ""
-                    if src: main_img = src; break
-                except: pass
-
-            option_reviews = collect_reviews_per_radio_option(driver, max_reviews=MAX_REVIEWS_PER_OPTION)
-            for review_name, texts in option_reviews:
-                rec = {
-                    "brand_name": brand,
-                    "product_name": name,
-                    "price": price,
-                    "product_main_image": main_img,
-                    "review_name": review_name,
-                    "product_url": url
-                }
-                for j, txt in enumerate(texts, start=1):
-                    rec[f"text{j}"] = txt
-                if not texts:
-                    for j in range(1, MAX_REVIEWS_PER_OPTION+1):
-                        rec[f"text{j}"] = ""
-                products.append(rec)
-
-            print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료")
-    finally:
-        try:
-            driver.quit()
-            atexit.unregister(driver.quit)
-        except: pass
-        try:
-            del driver
-        except: pass
 
     with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
         json.dump(products, f, ensure_ascii=False, indent=2)

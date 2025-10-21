@@ -58,6 +58,22 @@ def open_in_new_tab(driver, url):
 
     return base, detail
 
+
+# ✅ ---------------- 판매 종료 상품 감지 함수 ----------------
+def is_product_unavailable(driver):
+    """
+    상품이 '판매 종료' 또는 '상품을 찾을 수 없습니다' 페이지인지 감지.
+    """
+    try:
+        elems = driver.find_elements(By.CSS_SELECTOR, "#error-contents.error-page.noProduct")
+        if len(elems) > 0:
+            return True
+    except:
+        pass
+    return False
+# ✅ ------------------------------------------------------
+
+
 # ---------------- 크롤링 함수 ----------------
 def crawl_category_file(input_json):
     with open(input_json, "r", encoding="utf-8") as f:
@@ -91,6 +107,22 @@ def crawl_category_file(input_json):
             if len(tab_queue) >= MAX_TABS or i == len(product_links):
                 for idx, url, base, handle in tab_queue:
                     driver.switch_to.window(handle)
+
+                    # ✅ -------- 판매 종료 상품 감지 추가 --------
+                    if is_product_unavailable(driver):
+                        print(f"[SKIP] ({idx}/{len(product_links)}) 판매 종료된 상품: {url}")
+                        try:
+                            driver.close()
+                        except:
+                            pass
+                        try:
+                            driver.switch_to.window(base)
+                        except:
+                            handles = driver.window_handles
+                            if handles:
+                                driver.switch_to.window(handles[0])
+                        continue
+                    # ✅ ----------------------------------------
 
                     # -------- 기본 정보 --------
                     brand = get_text_safe(driver, ["p.prd_brand a", "p.prd_brand", ".brand_name a", ".brand_name"])
