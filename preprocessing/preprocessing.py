@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import unicodedata
 
 class OliveYoungPreprocessor:
     def __init__(self, input_path, output_path):
@@ -24,6 +25,8 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', name, flags=re.IGNORECASE)
         # 단품/기획/한정 기획 제거
         name = re.sub(r'\b(단품|기획|한정\s*기획)\b', '', name)
+        # '더블기획' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
+        name = re.sub(r'[_\s]*더블기획[_\s]*', '', name)
         # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
         name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
         # "중 택1", "중 택2", "택1", "택2" 제거
@@ -37,42 +40,56 @@ class OliveYoungPreprocessor:
 
     @classmethod
     def clean_code_name(cls, code: str) -> str:
+        if not code:
+            return ""
+
+        # 1. 특수 공백 문자 제거 (\u3000, \xa0, \u200b 등)
+        code = code.replace("\u3000", " ").replace("\xa0", " ").replace("\u200b", " ")
         code = code.strip()
 
-        # 단독 "단품"이면 그대로 반환
+        # 2. 줄바꿈 이후 내용 제거 (가격 등 불필요한 텍스트)
+        code = re.sub(r'\n.*$', '', code).strip()
+
+        # 3. 전각 문자 → 반각 문자 변환
+        code = unicodedata.normalize("NFKC", code)
+
         if code == "단품":
             return code
 
-        original_code = code
+        # 4. 괄호 감싸짐 확인 → 양쪽 괄호와 공백만 제거
+        m = re.fullmatch(r'^\[\s*(.*?)\s*\]$', code)
+        if m:
+            code = m.group(1).strip()
+            wrapped = True
+        else:
+            m = re.fullmatch(r'^\(\s*(.*?)\s*\)$', code)
+            if m:
+                code = m.group(1).strip()
+                wrapped = True
+            else:
+                wrapped = False
 
-        # 불필요한 괄호, 이벤트 제거
-        code = re.sub(r'\[.*?\]', '', code)
+        # 5. 기존 전처리 적용 (괄호 안 내용 제거 등, 전체 괄호 감싸짐이 아닌 경우만)
+        if not wrapped:
+            code = re.sub(r'\[.*?\]', '', code)
+
+        code = re.sub(r'\(품절\)', '', code)
         code = re.sub(r'\(.*?\)', '', code)
-        code = code.replace('(품절)', '')
-        code = re.sub(r'\n.*$', '', code)
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
         code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
         code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
-
-        # *N개입 제거
         code = re.sub(r'\*\s*\d+\s*개입', '', code)
-
-        # 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
 
-        # 남은 문자열에 숫자+단위 제거 조건
-        # 숫자+단위 패턴
-        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors)'
-        
-        # 남은 문자열에 텍스트가 섞여 있으면 숫자+단위 제거
+        # 6. 숫자+단위 제거 (문자와 섞여 있는 경우만)
+        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors)\b'
         if re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
-            code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE)
-            code = code.strip()
+            code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
 
         return code
 
 
-
+    
     def preprocess(self):
         preprocessed = []
         seen = set()
