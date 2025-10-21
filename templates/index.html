@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>💄 RAG Lip Tint Chatbot</title>
+  <style>
+    body {
+      font-family: "Pretendard", sans-serif;
+      background-color: #fff5f8;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      gap: 24px;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    /* === 왼쪽: 챗봇 === */
+    #chat-container {
+      width: 500px;
+      height: 85vh;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #messages {
+      flex-grow: 1;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .message {
+      margin-bottom: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .user { text-align: right; color: #c64061; }
+    .bot  { text-align: left; color: #333; }
+
+    #input-area { display: flex; border-top: 1px solid #eee; }
+    #user-input { flex-grow: 1; border: none; padding: 12px; font-size: 15px; outline: none; }
+    #send-btn { background: #c64061; color: white; border: none; padding: 0 18px; cursor: pointer; font-weight: bold; }
+    #next-btn { background: #333; color: white; border: none; padding: 6px 12px; margin: 8px 0; cursor: pointer; font-weight: bold; border-radius: 8px; }
+
+    /* === 오른쪽: 내 사진 업로드 === */
+    #sidebar {
+      width: 280px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 16px;
+      height: fit-content;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #sidebar h3 { margin: 4px 0 8px 0; color: #c64061; }
+    #photo-preview {
+      width: 100%;
+      border: 1px solid #eee;
+      border-radius: 10px;
+      height: 220px;
+      object-fit: cover;
+      display: none;
+    }
+    #file-input { width: 100%; font-size: 14px; }
+    #tryon-btn {
+      background: #c64061;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      width: 100%;
+      font-weight: bold;
+    }
+    #tryon-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* === 타이핑 애니메이션 === */
+    .typing span {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: #333;
+      margin-right: 2px;
+      border-radius: 2px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 0%,50%,100%{opacity:0;} 25%,75%{opacity:1;} }
+  </style>
+</head>
+<body>
+  <!-- 왼쪽: 챗봇 -->
+  <div id="chat-container">
+    <div id="messages"></div>
+    <div id="input-area">
+      <input id="user-input" type="text" placeholder="메시지를 입력하세요..." />
+      <button id="send-btn">전송</button>
+    </div>
+    <button id="next-btn" style="display:none;">다른 제품도 보기</button>
+  </div>
+
+  <!-- 오른쪽: 내 사진 업로드 -->
+  <div id="sidebar">
+    <h3>📷 내 입술 합성</h3>
+    <img id="photo-preview" alt="preview" />
+    <input id="file-input" type="file" accept="image/*" />
+    <button id="tryon-btn" disabled>합성하기</button>
+    <p style="font-size:13px; color:#666; text-align:center;">
+      내 사진을 올린 뒤 “합성하기”를 누르면<br>최근 추천된 제품 발색과 합성됩니다.
+    </p>
+  </div>
+
+  <script>
+    const input = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const nextBtn = document.getElementById("next-btn");
+    const messages = document.getElementById("messages");
+
+    const fileInput = document.getElementById("file-input");
+    const preview = document.getElementById("photo-preview");
+    const tryonBtn = document.getElementById("tryon-btn");
+
+    let userId = "default";
+    let lastSwatchUrl = null; // ✅ 최근 추천된 발색 이미지 저장
+
+    // === 사진 미리보기 ===
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        preview.style.display = "none";
+        tryonBtn.disabled = true;
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      preview.src = url;
+      preview.style.display = "block";
+      tryonBtn.disabled = false;
+    });
+
+    // === 챗봇 로직 ===
+    function addTypingIndicator() {
+      const container = document.createElement("div");
+      container.className = "message bot typing";
+      container.id = `typing-${Date.now()}`;
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement("span");
+        dot.style.animationDelay = `${i * 0.2}s`;
+        container.appendChild(dot);
+      }
+      messages.appendChild(container);
+      messages.scrollTop = messages.scrollHeight;
+      return container.id;
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      messages.innerHTML += `<div class="message user">🙋‍♀️ ${text}</div>`;
+      input.value = "";
+      const typingId = addTypingIndicator();
+
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, user_id: userId })
+      });
+      const data = await res.json();
+      const typingElem = document.getElementById(typingId);
+      if (typingElem) typingElem.remove();
+
+      messages.innerHTML += `<div class="message bot">🤖 ${data.response}</div>`;
+      if (data.images && data.images.length > 0) {
+        lastSwatchUrl = data.images[0]; // ✅ 최근 추천 이미지 저장
+
+        const imgContainer = document.createElement("div");
+        imgContainer.style.display = "flex";
+        imgContainer.style.gap = "10px";
+        imgContainer.style.marginTop = "8px";
+        data.images.forEach((url, i) => {
+          const imgBox = document.createElement("div");
+          imgBox.style.display = "flex";
+          imgBox.style.flexDirection = "column";
+          imgBox.style.alignItems = "center";
+          const textDiv = document.createElement("div");
+          textDiv.style.fontSize = "12px";
+          textDiv.style.marginBottom = "2px";
+          textDiv.textContent = `제품: ${data.product_names[i]}, 색상: ${data.code_names[i]}`;
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = "추천 제품";
+          img.style.width = "60px";
+          img.style.height = "60px";
+          img.style.borderRadius = "8px";
+          img.style.objectFit = "cover";
+          imgBox.appendChild(textDiv);
+          imgBox.appendChild(img);
+          imgContainer.appendChild(imgBox);
+        });
+        messages.appendChild(imgContainer);
+      }
+      messages.scrollTop = messages.scrollHeight;
+      nextBtn.style.display = "block";
+    }
+
+    async function nextProduct() {
+      const typingId = addTypingIndicator();
+      const res = await fetch("/next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+      });
+      const data = await res.json();
+      const typingElem = document.getElementById(typingId);
+      if (typingElem) typingElem.remove();
+
+      messages.innerHTML += `<div class="message bot">🤖 ${data.response}</div>`;
+      if (data.images && data.images.length > 0) {
+        lastSwatchUrl = data.images[0]; // ✅ 다음 추천 시에도 갱신
+
+        const imgContainer = document.createElement("div");
+        imgContainer.style.display = "flex";
+        imgContainer.style.gap = "10px";
+        imgContainer.style.marginTop = "8px";
+        data.images.forEach((url, i) => {
+          const imgBox = document.createElement("div");
+          imgBox.style.display = "flex";
+          imgBox.style.flexDirection = "column";
+          imgBox.style.alignItems = "center";
+          const textDiv = document.createElement("div");
+          textDiv.style.fontSize = "12px";
+          textDiv.style.marginBottom = "2px";
+          textDiv.textContent = `제품: ${data.product_names[i]}, 색상: ${data.code_names[i]}`;
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = "추천 제품";
+          img.style.width = "60px";
+          img.style.height = "60px";
+          img.style.borderRadius = "8px";
+          img.style.objectFit = "cover";
+          imgBox.appendChild(textDiv);
+          imgBox.appendChild(img);
+          imgContainer.appendChild(imgBox);
+        });
+        messages.appendChild(imgContainer);
+      }
+      messages.scrollTop = messages.scrollHeight;
+      if (data.response === "더 이상 추천할 제품이 없습니다.") {
+        nextBtn.style.display = "none";
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", e => { if (e.key === "Enter") sendMessage(); });
+    nextBtn.addEventListener("click", nextProduct);
+
+    // === 가상 화장 적용 ===
+    tryonBtn.addEventListener("click", async () => {
+      const file = fileInput.files[0];
+      if (!file) return alert("사진을 선택해주세요.");
+      if (!lastSwatchUrl) return alert("먼저 제품을 추천받은 뒤 합성해주세요!"); // ✅ 체크
+
+      tryonBtn.disabled = true;
+      tryonBtn.textContent = "합성 중...";
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Image = reader.result;
+        const res = await fetch("/apply_makeup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64Image, swatch_url: lastSwatchUrl }) // ✅ swatch_url 전달
+        });
+        const data = await res.json();
+
+        tryonBtn.disabled = false;
+        tryonBtn.textContent = "합성하기";
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        const imgBox = document.createElement("div");
+        imgBox.className = "message bot";
+        const title = document.createElement("div");
+        title.textContent = "🤖 내 입술 적용 미리보기";
+        imgBox.appendChild(title);
+        const img = document.createElement("img");
+        img.src = "data:image/png;base64," + data.result_image;
+        img.style.marginTop = "8px";
+        img.style.maxWidth = "100%";
+        img.style.borderRadius = "12px";
+        imgBox.appendChild(img);
+        messages.appendChild(imgBox);
+        messages.scrollTop = messages.scrollHeight;
+      };
+      reader.readAsDataURL(file);
+    });
+  </script>
+</body>
+</html>

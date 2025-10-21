@@ -1,7 +1,7 @@
+import os
 import time
 import json
 import re
-import os
 import sys
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -17,8 +17,10 @@ sys.path.append(os.path.join(BASE_DIR, ".."))
 from preprocessing.preprocessing import OliveYoungPreprocessor
 
 # ---------------- 설정 ----------------
-CAT_URL = "https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo=100000100020006&rowsPerPage=48"
-MAX_PRODUCTS = 48
+SNAPSHOTS_DIR = os.path.join(BASE_DIR, "..", "snapshots")
+OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 MAX_TABS = 4
 
 # ---------------- 유틸 함수 ----------------
@@ -39,15 +41,48 @@ def num_only(s: str) -> str:
 
 def open_in_new_tab(driver, url):
     base = driver.current_window_handle
-    driver.execute_script("window.open(arguments[0], '_blank');", url)
+    driver.execute_script(f"window.open('about:blank', '_blank');")
     WebDriverWait(driver, 5).until(lambda d: len(d.window_handles) > 1)
+
     new_handles = [h for h in driver.window_handles if h != base]
     detail = new_handles[-1]
     driver.switch_to.window(detail)
+    driver.execute_script(f"window.location.href = '{url}';")
+
+    try:
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+    except:
+        pass
+
     return base, detail
 
-# ---------------- 크롤링 ----------------
-def crawl_olive_young():
+
+# ✅ ---------------- 판매 종료 상품 감지 함수 ----------------
+def is_product_unavailable(driver):
+    """
+    상품이 '판매 종료' 또는 '상품을 찾을 수 없습니다' 페이지인지 감지.
+    """
+    try:
+        elems = driver.find_elements(By.CSS_SELECTOR, "#error-contents.error-page.noProduct")
+        if len(elems) > 0:
+            return True
+    except:
+        pass
+    return False
+# ✅ ------------------------------------------------------
+
+
+# ---------------- 크롤링 함수 ----------------
+def crawl_category_file(input_json):
+    with open(input_json, "r", encoding="utf-8") as f:
+        product_links = json.load(f)
+
+    fname = os.path.basename(input_json)
+    suffix = fname.replace("url_", "").replace(".json", "")
+    output_path = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}.json")
+
     chrome_options = Options()
     chrome_options.add_argument("--window-size=1366,900")
     chrome_options.add_argument("--no-sandbox")
@@ -60,38 +95,11 @@ def crawl_olive_young():
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
-    products_data = []
-    OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUTPUT_PATH = os.path.join(OUTPUT_DIR, "oliveyoung_lip_makeup.json")
-
-    # 전처리기 생성
     preprocessor = OliveYoungPreprocessor(input_path=None, output_path=None)
+    products_data = []
+    tab_queue = []
 
     try:
-        # ---------------- 카테고리 페이지 접속 ----------------
-        driver.get(CAT_URL)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]")
-            )
-        )
-
-        # 상품 링크 수집 (중복 제거)
-        anchors = driver.find_elements(
-            By.XPATH, "//a[contains(@href,'getGoodsDetail.do') and contains(@href,'goodsNo=')]"
-        )
-        hrefs, seen = [], set()
-        for a in anchors:
-            href = (a.get_attribute("href") or "").strip()
-            if href and href not in seen:
-                seen.add(href)
-                hrefs.append(href)
-        product_links = hrefs[:MAX_PRODUCTS]
-
-        tab_queue = []
-
-        # ---------------- 제품별 탭 처리 ----------------
         for i, link in enumerate(product_links, 1):
             base_handle, detail_handle = open_in_new_tab(driver, link)
             tab_queue.append((i, link, base_handle, detail_handle))
@@ -99,6 +107,22 @@ def crawl_olive_young():
             if len(tab_queue) >= MAX_TABS or i == len(product_links):
                 for idx, url, base, handle in tab_queue:
                     driver.switch_to.window(handle)
+
+                    # ✅ -------- 판매 종료 상품 감지 추가 --------
+                    if is_product_unavailable(driver):
+                        print(f"[SKIP] ({idx}/{len(product_links)}) 판매 종료된 상품: {url}")
+                        try:
+                            driver.close()
+                        except:
+                            pass
+                        try:
+                            driver.switch_to.window(base)
+                        except:
+                            handles = driver.window_handles
+                            if handles:
+                                driver.switch_to.window(handles[0])
+                        continue
+                    # ✅ ----------------------------------------
 
                     # -------- 기본 정보 --------
                     brand = get_text_safe(driver, ["p.prd_brand a", "p.prd_brand", ".brand_name a", ".brand_name"])
@@ -142,29 +166,19 @@ def crawl_olive_young():
                         for i_opt, option in enumerate(option_elements):
                             option_name = option.text.strip()
                             thumb_url = ""
-
                             if i_opt < len(thumb_divs):
                                 div = thumb_divs[i_opt]
-
-                                # hidden input 값 가져오기
                                 try:
                                     path = div.find_element(By.CSS_SELECTOR, "input[name^='colrCmprImgPathNm_']").get_attribute("value")
                                     filename = div.find_element(By.CSS_SELECTOR, "input[name^='colrCmprImgNm_']").get_attribute("value")
-
                                     if path and filename:
-                                        # 원하는 포맷으로 URL 생성
                                         thumb_url = f"https://image.oliveyoung.co.kr/uploads/images/{path}/{filename}"
-                                except Exception as e:
-                                    print("[THUMB_COLOR BUILD ERROR]", e)
-
+                                except:
+                                    pass
                             if option_name:
-                                variants.append({
-                                    "code_name": option_name,
-                                    "thumb_color": thumb_url
-                                })
+                                variants.append({"code_name": option_name, "thumb_color": thumb_url})
                     except:
                         variants = [{"code_name": "단품", "thumb_color": ""}]
-
 
                     # -------- 상세 이미지 수집 --------
                     product_images = []
@@ -182,7 +196,7 @@ def crawl_olive_young():
                                 driver.execute_script("arguments[0].scrollIntoView(true);", img)
                                 time.sleep(0.2)
                                 src = img.get_attribute("data-src") or img.get_attribute("src")
-                                if src and not src.startswith("data:image"):
+                                if src and not src.startswith("data:image") and src not in product_images:
                                     product_images.append(src)
                             except:
                                 continue
@@ -191,12 +205,42 @@ def crawl_olive_young():
                         for div in speedy_divs:
                             try:
                                 bg_url = div.value_of_css_property("background-image")
-                                if bg_url.startswith("url("):
+                                if bg_url and bg_url.startswith("url("):
                                     bg_url = bg_url[4:-1].strip('"').strip("'")
                                     if bg_url and not bg_url.startswith("data:image") and bg_url not in product_images:
                                         product_images.append(bg_url)
                             except:
                                 continue
+
+                        temp_imgs = driver.find_elements(By.CSS_SELECTOR, "#tempHtml2 img, div#tempHtml2.contEditor img, #goodsDetailHtml.contEditor img, .contEditor#tempHtml2 img")
+                        for img in temp_imgs:
+                            try:
+                                src = img.get_attribute("src") or img.get_attribute("data-src") or ""
+                                if src and not src.startswith("data:image") and src not in product_images:
+                                    product_images.append(src)
+                            except:
+                                continue
+
+                        if not product_images:
+                            fallback_imgs = driver.find_elements(By.CSS_SELECTOR, ".prd_detail_cont picture img, #new_detail_wrap picture img")
+                            for img in fallback_imgs:
+                                try:
+                                    src = img.get_attribute("src")
+                                    if src and "uploads/images/details" in src and src not in product_images:
+                                        product_images.append(src)
+                                except:
+                                    continue
+
+                        if not product_images:
+                            alt_imgs = driver.find_elements(By.CSS_SELECTOR, "#goodsImgArea img, .prd_detail_area img")
+                            for img in alt_imgs:
+                                try:
+                                    src = img.get_attribute("src")
+                                    if src and "uploads/images" in src and not src.startswith("data:image") and src not in product_images:
+                                        product_images.append(src)
+                                except:
+                                    continue
+
                     except Exception as e:
                         print("[IMAGE COLLECT ERROR]", e)
 
@@ -215,9 +259,8 @@ def crawl_olive_young():
                             "product_images": product_images
                         })
 
-                    print(f"[{idx:02d}/{len(product_links)}] {name} - {len(variants)} variants, 이미지 {len(product_images)}장 수집")
+                    print(f"[{idx:03d}/{len(product_links)}] {name} - {len(variants)} variants, 이미지 {len(product_images)}장 수집")
 
-                    # 탭 닫고 기본 탭으로 복귀
                     try: driver.close()
                     except: pass
                     try: driver.switch_to.window(base)
@@ -229,19 +272,21 @@ def crawl_olive_young():
                 tab_queue = []
 
     finally:
-        try:
-            driver.quit()
-        except:
-            pass
+        try: driver.quit()
+        except: pass
 
-        # ---------------- JSON 저장 ----------------
-        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(products_data, f, ensure_ascii=False, indent=2)
-        print(f"{len(products_data)}건 저장 완료 -> {OUTPUT_PATH}")
+        print(f"{len(products_data)}건 저장 완료 -> {output_path}")
 
 
 if __name__ == "__main__":
     start_time = time.time()
-    crawl_olive_young()
+
+    json_files = [os.path.join(SNAPSHOTS_DIR, f) for f in os.listdir(SNAPSHOTS_DIR) if f.endswith(".json")]
+    for jf in json_files:
+        print(f"=== 카테고리 파일 처리 === {jf}")
+        crawl_category_file(jf)
+
     end_time = time.time()
     print(f"[TIME] 총 소요 시간: {end_time - start_time:.2f}초")
