@@ -21,17 +21,19 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\(.*?\)', '', name)
         # 1+1, 1+2, 2+1 등 제거
         name = re.sub(r'\b\d+\s*\+\s*\d+\b', '', name)
-        # 용량/종류/개/색상 관련 표현 제거
-        name = re.sub(r'\b\d+(\.\d+)?\s*(g|ml|oz|종|개|COLOR|Colors|color|colors|Color)\b', '', name, flags=re.IGNORECASE)
-        # 단품/기획/한정 기획 제거
-        name = re.sub(r'\b(단품|기획|한정\s*기획)\b', '', name)
-        # '더블기획' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
-        name = re.sub(r'[_\s]*더블기획[_\s]*', '', name)
+        # 용량/종류/개/색상 관련 표현 제거, 앞뒤 언더바(_) 포함
+        name = re.sub(r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors|color|컬러|칼라|입|개입))+', '', name, flags=re.IGNORECASE)
+        # N회분 제거
+        name = re.sub(r'\b\d+\s*회분\b', '', name)
+        # '더블기획' 같은 복합형 표현 먼저 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
+        name = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', name)
+        # 단품/기획/모음전/한정 기획 제거
+        name = re.sub(r'\b(단품|기획|모음전|한정\s*기획)\b', '', name)
         # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
         name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
-        # "중 택1", "중 택2", "택1", "택2" 제거
-        name = re.sub(r'\b중\s*택\d+\b', '', name)
-        name = re.sub(r'\b택\d+\b', '', name)
+        # "중 택1", "중 택2", "택1", "택2", "택 1" 등 제거
+        name = re.sub(r'\b중\s*택\s*\d+\b', '', name)
+        name = re.sub(r'\b택\s*\d+\b', '', name)
         # 불필요한 슬래시(/) 정리 (앞뒤 공백 포함)
         name = re.sub(r'\s*/\s*', ' ', name)
         # 중복 공백 제거 + 양쪽 공백 제거
@@ -56,18 +58,16 @@ class OliveYoungPreprocessor:
         if code == "단품":
             return code
 
-        # 4. 괄호 감싸짐 확인 → 양쪽 괄호와 공백만 제거
-        m = re.fullmatch(r'^\[\s*(.*?)\s*\]$', code)
-        if m:
-            code = m.group(1).strip()
+        # 4. 괄호 감싸짐 확인 → 양쪽 괄호와 공백만 제거 (내부 괄호가 없는 경우만)
+        if re.fullmatch(r'^\[\s*[^\[\]]+\s*\]$', code):
+            code = re.sub(r'^\[\s*(.*?)\s*\]$', r'\1', code).strip()
+            wrapped = True
+        elif re.fullmatch(r'^\(\s*[^\(\)]+\s*\)$', code):
+            code = re.sub(r'^\(\s*(.*?)\s*\)$', r'\1', code).strip()
             wrapped = True
         else:
-            m = re.fullmatch(r'^\(\s*(.*?)\s*\)$', code)
-            if m:
-                code = m.group(1).strip()
-                wrapped = True
-            else:
-                wrapped = False
+            wrapped = False
+
 
         # 5. 기존 전처리 적용 (괄호 안 내용 제거 등, 전체 괄호 감싸짐이 아닌 경우만)
         if not wrapped:
