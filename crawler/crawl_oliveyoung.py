@@ -246,17 +246,28 @@ def crawl_category_file(input_json):
 
                     # -------- 전처리 적용 및 데이터 저장 --------
                     for v in variants:
-                        clean_name = preprocessor.clean_product_name(name)
-                        clean_code = preprocessor.clean_code_name(v["code_name"])
+                        full_code = v["code_name"].strip()  # 예: "[키링기획] 03 브라운 1.5g\n9,600원"
 
-                        # ✅ 전처리 후의 code_name이 '단독'만 남을 경우
-                        if not preprocessor.is_valid_code_name(v["code_name"], name):
+                        # ---------------- price 분리 ----------------
+                        if "\n" in full_code and full_code != "단품":
+                            code_part, price_part = full_code.split("\n", 1)
+                            code_name_raw = code_part.strip()
+                            price_raw = re.sub(r"[^\d]", "", price_part)  # 숫자만 추출
+                        else:
+                            code_name_raw = full_code
+                            # 단품인 경우 기존 price 크롤링 유지
+                            price_raw = price
+
+                        clean_name = preprocessor.clean_product_name(name)
+                        clean_code = preprocessor.clean_code_name(code_name_raw)
+
+                        if not preprocessor.is_valid_code_name(code_name_raw, name):
                             continue
 
                         products_data.append({
                             "brand_name": brand,
                             "product_name": clean_name,
-                            "price": price,
+                            "price": price_raw,
                             "product_main_image": main_img,
                             "code_name": clean_code,
                             "thumb_color": v.get("thumb_color", ""),

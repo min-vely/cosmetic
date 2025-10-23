@@ -35,7 +35,7 @@ class OliveYoungPreprocessor:
         # 숫자+단위+기획, 기획 단독 제거
         name = re.sub(r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors|color|컬러|칼라|입|개입|회분)?[_\s]*)?기획\b', '', name, flags=re.IGNORECASE)
         # 단품/모음전/한정 기획 등 제거
-        name = re.sub(r'\b(단품|모음전|한정\s*기획|꿀조합|특별한정기획|듀오팩|기프트세트|대용량팩)\b', '', name)
+        name = re.sub(r'\b(단품|모음전|한정\s*기획|꿀조합|특별한정|특별한정기획|듀오팩|기프트세트|대용량팩)\b', '', name)
         # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
         name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
         # "중 택1", "중 택2", "택1", "택2", "택 1" 등 제거
@@ -117,6 +117,29 @@ class OliveYoungPreprocessor:
             print(f"[SKIP] code_name='단독' → {product_name}")
             return False
         return True
+
+    @classmethod
+    def extract_price_from_code_name(cls, code_name: str):
+        """
+        code_name이 '[키링기획] 03 브라운 1.5g\\n9,600원' 형태일 때
+        ('[키링기획] 03 브라운 1.5g', '9600')을 반환.
+        - '단품' 또는 None이면 가격은 빈 문자열로 반환.
+        - 숫자만 추출하며, 콤마/원 단위 제거.
+        """
+        if not code_name or code_name.strip() == "단품":
+            return code_name.strip() if code_name else "", ""
+
+        # 줄바꿈 기준 분리
+        parts = code_name.split("\n", 1)
+        name = parts[0].strip()
+        price = ""
+
+        # 가격 부분 존재 시 숫자만 추출
+        if len(parts) > 1:
+            price_text = parts[1].strip()
+            price = re.sub(r"[^\d]", "", price_text)  # "9,600원" → "9600"
+
+        return name, price
     
     def preprocess(self):
         preprocessed = []
@@ -128,7 +151,14 @@ class OliveYoungPreprocessor:
 
             # code_name, review_name 모두 clean_code_name 적용
             if 'code_name' in p:
-                new_product['code_name'] = self.clean_code_name(p['code_name'])
+                # code_name에서 가격 분리
+                raw_code = p['code_name']
+                clean_code, extracted_price = self.extract_price_from_code_name(raw_code)
+                new_product['code_name'] = self.clean_code_name(clean_code)
+
+                # 기존 price가 없고, code_name에서 가격이 추출된 경우
+                if not p.get('price') and extracted_price:
+                    new_product['price'] = extracted_price
             if 'review_name' in p:
                 new_product['review_name'] = self.clean_code_name(p['review_name'])
 
