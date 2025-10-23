@@ -19,21 +19,30 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\[.*?\]', '', name)
         # () 안 내용 제거
         name = re.sub(r'\(.*?\)', '', name)
-        # 1+1, 1+2, 2+1 등 제거
-        name = re.sub(r'\b\d+\s*\+\s*\d+\b', '', name)
-        # 용량/종류/개/색상 관련 표현 제거, 앞뒤 언더바(_) 포함
-        name = re.sub(r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors|color|컬러|칼라|입|개입))+', '', name, flags=re.IGNORECASE)
+        # 1+1, 1+2, 2+1기획 등 제거
+        name = re.sub(r'\b\d+\s*\+\s*\d+(?:\s*기획)?\b', '', name)
+        # 용량/종류/개/색상 관련 표현 제거, 앞뒤 언더바(_) 포함 (단위 뒤에 공백, 특수문자, 문자열 끝이 오는 경우만)
+        name = re.sub(
+            r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors?|컬러|칼라|입|개입|회분))(?=[\s/_+.,*&xX×]|$)',
+            '',
+            name,
+            flags=re.IGNORECASE
+        )
         # N회분 제거
         name = re.sub(r'\b\d+\s*회분\b', '', name)
         # '더블기획' 같은 복합형 표현 먼저 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
-        name = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', name)
-        # 단품/기획/모음전/한정 기획 제거
-        name = re.sub(r'\b(단품|기획|모음전|한정\s*기획)\b', '', name)
+        name = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트|듀오\s*세트)[_\s]*?', '', name)
+        # 숫자+단위+기획, 기획 단독 제거
+        name = re.sub(r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors|color|컬러|칼라|입|개입|회분)?[_\s]*)?기획\b', '', name, flags=re.IGNORECASE)
+        # 단품/모음전/한정 기획 등 제거
+        name = re.sub(r'\b(단품|모음전|한정\s*기획|꿀조합|특별한정기획|듀오팩|기프트세트|대용량팩)\b', '', name)
         # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
         name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
         # "중 택1", "중 택2", "택1", "택2", "택 1" 등 제거
         name = re.sub(r'\b중\s*택\s*\d+\b', '', name)
         name = re.sub(r'\b택\s*\d+\b', '', name)
+        # X숫자 또는 *숫자 제거 (예: X3, *2)
+        name = re.sub(r'\s*(\*|[xX×])\d+', '', name)
         # 불필요한 슬래시(/) 정리 (앞뒤 공백 포함)
         name = re.sub(r'\s*/\s*', ' ', name)
         # 중복 공백 제거 + 양쪽 공백 제거
@@ -77,18 +86,37 @@ class OliveYoungPreprocessor:
         code = re.sub(r'\(.*?\)', '', code)
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
         code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
-        code = re.sub(r'[\s_+/]?(단품|세트|기획)', '', code)
         code = re.sub(r'\*\s*\d+\s*개입', '', code)
-        code = re.sub(r'\s+', ' ', code).strip()
+        code = re.sub(r'\s+', ' ', code).strip()        
 
         # 6. 숫자+단위 제거 (문자와 섞여 있는 경우만)
-        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors)\b'
+        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors|컬러|칼라|입|개입|회분)\b'
         if re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
             code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
 
+        code = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', code)
+
+        # 1) '세트', '기획' 등 제거
+        code = re.sub(r'[\s_+/]?(세트|기획|듀오팩)', '', code)
+
+        # 2) '단품' 단독인지 확인 후 제거 여부 결정
+        if code.strip() not in ["단품"]:
+            code = re.sub(r'[\s_+/]?단품', '', code)
+
+
         return code
 
-
+    @classmethod
+    def is_valid_code_name(cls, code: str, product_name: str = "") -> bool:
+        """
+        전처리 후의 code_name이 유효한 경우만 True 반환.
+        예: '단독' 같은 불필요한 코드명은 False로 처리.
+        """
+        clean_code = cls.clean_code_name(code)
+        if clean_code.strip() == "단독":
+            print(f"[SKIP] code_name='단독' → {product_name}")
+            return False
+        return True
     
     def preprocess(self):
         preprocessed = []
@@ -97,7 +125,7 @@ class OliveYoungPreprocessor:
         for p in self.products:
             new_product = p.copy()
             new_product['product_name'] = self.clean_product_name(p['product_name'])
-            
+
             # code_name, review_name 모두 clean_code_name 적용
             if 'code_name' in p:
                 new_product['code_name'] = self.clean_code_name(p['code_name'])
