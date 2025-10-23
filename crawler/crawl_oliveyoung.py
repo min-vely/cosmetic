@@ -248,6 +248,11 @@ def crawl_category_file(input_json):
                     for v in variants:
                         clean_name = preprocessor.clean_product_name(name)
                         clean_code = preprocessor.clean_code_name(v["code_name"])
+
+                        # ✅ 전처리 후의 code_name이 '단독'만 남을 경우
+                        if not preprocessor.is_valid_code_name(v["code_name"], name):
+                            continue
+
                         products_data.append({
                             "brand_name": brand,
                             "product_name": clean_name,
