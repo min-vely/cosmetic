@@ -19,11 +19,17 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\[.*?\]', '', name)
         # () 안 내용 제거
         name = re.sub(r'\(.*?\)', '', name)
-        # 1+1, 1+2 등 숫자+숫자 제거, 뒤에 '기획'이 공백으로 붙어 있으면 지우지 않음
-        name = re.sub(r'\b\d+\s*\+\s*\d+\b(?!\s*기획)', '', name)
+
+        # 숫자+단위 + 숫자+단위 패턴 제거
+        name = re.sub(
+            r'\d+(?:\.\d+)?\s*(?:g|ml|oz)\s*\+\s*\d+(?:\.\d+)?\s*(?:g|ml|oz)',
+            '',
+            name,
+            flags=re.IGNORECASE
+        )
         # 용량/종류/개/색상 관련 표현 제거, 앞뒤 언더바(_) 포함 (단위 뒤에 공백, 특수문자, 문자열 끝이 오는 경우만)
         name = re.sub(
-            r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors?|컬러|칼라|입|개입|회분))(?=[\s/_+.,*&xX×]|$)',
+            r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors?|Colos|clolors|컬러|칼라|입|개입|회분))(?=[\s/_+.,*&xX×]|$)',
             '',
             name,
             flags=re.IGNORECASE
@@ -31,11 +37,11 @@ class OliveYoungPreprocessor:
         # N회분 제거
         name = re.sub(r'\b\d+\s*회분\b', '', name)
         # '더블기획' 같은 복합형 표현 먼저 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
-        name = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트|듀오\s*세트)[_\s]*?', '', name)
+        name = re.sub(r'[_\s]*?(더블\s*기획|증정\s*기획|한정\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트|듀오\s*세트)[_\s]*?', '', name)
         # 숫자+단위+기획, 기획 단독 제거
         name = re.sub(r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors|color|컬러|칼라|입|개입|회분)?[_\s]*)?기획\b', '', name, flags=re.IGNORECASE)
-        # 단품/모음전/한정 기획 등 제거
-        name = re.sub(r'\b(단품|모음전|한정\s*기획|꿀조합|특별한정|특별한정기획|듀오팩|기프트세트|대용량팩)\b', '', name)
+        # 단품/모음전/한정 기획 등 제거(앞뒤 단어 붙어있을 경우만)
+        name = re.sub(r'\b(단품|모음전|한정\s*기획|꿀조합|특별한정기획|특별한정|듀오팩|기프트세트|대용량팩)\b', '', name)
         # '리필' 단독 제거 (앞뒤가 공백, 시작/끝, 또는 특수문자인 경우만)
         name = re.sub(r'(?<!\w)리필(?!\w)', '', name)
         # "중 택1", "중 택2", "택1", "택2", "택 1" 등 제거
@@ -43,7 +49,8 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\b택\s*\d+\b', '', name)
         # X숫자 또는 *숫자 제거 (예: X3, *2)
         name = re.sub(r'\s*(\*|[xX×])\d+', '', name)
-
+        # 1+1, 1+2 등 숫자+숫자 제거, 뒤에 '기획'이 공백으로 붙어 있으면 지우지 않음
+        name = re.sub(r'\b\d+\s*\+\s*\d+\b(?!\s*기획)', '', name)
         # '기획' 단독 제거, 앞뒤 공백 포함
         name = re.sub(r'\s*기획\s*', ' ', name)
 
@@ -89,27 +96,42 @@ class OliveYoungPreprocessor:
         code = re.sub(r'\(품절\)', '', code)
         code = re.sub(r'\(.*?\)', '', code)
         code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
-        code = re.sub(r'\bNEW\b', '', code, flags=re.IGNORECASE)
         code = re.sub(r'\*\s*\d+\s*개입', '', code)
-        code = re.sub(r'\s+', ' ', code).strip()        
+        code = re.sub(r'\s+', ' ', code).strip()  
 
-        # 6. 숫자+단위 제거 (문자와 섞여 있는 경우만)
-        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors|컬러|칼라|입|개입|회분)\b'
-        if re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
-            code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
+        # NEW, NEW), New), new) 등 모두 제거 + 뒤 공백도 제거
+        code = re.sub(r'\bNEW\)?\s*', '', code, flags=re.IGNORECASE)
 
-        code = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', code)
+
+        code = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|한정\s*기획|증정\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', code)
 
         # *숫자, *숫자EA, X숫자, X숫자EA 제거
         code = re.sub(r'\s*(\*|[xX×])\d+(?:EA)?', '', code, flags=re.IGNORECASE)
 
         # 1) '세트', '기획' 등 제거
-        code = re.sub(r'[\s_+/]?(세트|기획|듀오팩)', '', code)
+        code = re.sub(r'[\s_+/]?(세트|기획|증정|듀오팩)', '', code)
+
+        # 6. 숫자+단위 제거 (문자와 섞여 있는 경우만)
+        num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors|컬러|칼라|입|개입|회분)\b'
+        num_unit_combo_pattern = r'\d+(?:\.\d+)?\s*(?:g|ml|oz)\s*\+\s*\d+(?:\.\d+)?\s*(?:g|ml|oz)'
+        # ✅ 숫자+단위+숫자+단위 조합이 있으면, 이 단계에서 제거하지 않음
+        if re.fullmatch(num_unit_combo_pattern, code, flags=re.IGNORECASE):
+            pass
+        elif re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
+            code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
+        # ✅ 7. 숫자+단위 단독 or 숫자+단위+숫자+단위 단독일 경우, 이후 제거하지 않고 바로 리턴
+        if re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE) or re.fullmatch(num_unit_combo_pattern, code, flags=re.IGNORECASE):
+            return code.strip()
+
+        # 8. (이제 단독이 아닌 경우만) 숫자+단위+숫자+단위 패턴 제거
+        code = re.sub(num_unit_combo_pattern, '', code, flags=re.IGNORECASE)
 
         # 2) '단품' 단독인지 확인 후 제거 여부 결정
         if code.strip() not in ["단품"]:
             code = re.sub(r'[\s_+/]?단품', '', code)
 
+        # 중복 공백 제거 + 양쪽 공백 제거
+        code = re.sub(r'\s+', ' ', code).strip()
 
         return code
 
