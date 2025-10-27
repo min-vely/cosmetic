@@ -19,8 +19,8 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\[.*?\]', '', name)
         # () 안 내용 제거
         name = re.sub(r'\(.*?\)', '', name)
-        # 1+1, 1+2, 2+1기획 등 제거
-        name = re.sub(r'\b\d+\s*\+\s*\d+(?:\s*기획)?\b', '', name)
+        # 1+1, 1+2 등 숫자+숫자 제거, 뒤에 '기획'이 공백으로 붙어 있으면 지우지 않음
+        name = re.sub(r'\b\d+\s*\+\s*\d+\b(?!\s*기획)', '', name)
         # 용량/종류/개/색상 관련 표현 제거, 앞뒤 언더바(_) 포함 (단위 뒤에 공백, 특수문자, 문자열 끝이 오는 경우만)
         name = re.sub(
             r'([_\s]*\d+(\.\d+)?\s*(g|ml|oz|종|개|colors?|컬러|칼라|입|개입|회분))(?=[\s/_+.,*&xX×]|$)',
@@ -43,6 +43,10 @@ class OliveYoungPreprocessor:
         name = re.sub(r'\b택\s*\d+\b', '', name)
         # X숫자 또는 *숫자 제거 (예: X3, *2)
         name = re.sub(r'\s*(\*|[xX×])\d+', '', name)
+
+        # '기획' 단독 제거, 앞뒤 공백 포함
+        name = re.sub(r'\s*기획\s*', ' ', name)
+
         # 불필요한 슬래시(/) 정리 (앞뒤 공백 포함)
         name = re.sub(r'\s*/\s*', ' ', name)
         # 중복 공백 제거 + 양쪽 공백 제거
@@ -95,6 +99,9 @@ class OliveYoungPreprocessor:
             code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
 
         code = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', code)
+
+        # *숫자, *숫자EA, X숫자, X숫자EA 제거
+        code = re.sub(r'\s*(\*|[xX×])\d+(?:EA)?', '', code, flags=re.IGNORECASE)
 
         # 1) '세트', '기획' 등 제거
         code = re.sub(r'[\s_+/]?(세트|기획|듀오팩)', '', code)
