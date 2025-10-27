@@ -9,6 +9,7 @@ import string
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
 import undetected_chromedriver as uc
 import atexit
 
@@ -423,53 +424,98 @@ def extract_option_and_body(it):
             if opt: body = body.replace(opt,"").strip()
     return sanitize_text(opt), sanitize_text(body)
 
-def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10):
+def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10, max_pages: int = 50):
     want_norm = normalize_option_label(code_name_raw)
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
-    texts, seen = [], 0
-    stagnate, MAX_STAGNATE = 0, 6
-    while len(texts) < limit and stagnate < MAX_STAGNATE:
-        items = find_review_items(driver)
-        cur_len = len(items)
-        if cur_len <= seen:
-            stagnate += 1
-            if not click_load_more_reviews(driver):
-                break
-            time.sleep(0.6)
+
+    texts = []
+
+    def scrape_current_page_reviews():
+        local_texts = []
+        seen = 0
+        stagnate, MAX_STAGNATE = 0, 6
+        while len(local_texts) < limit and stagnate < MAX_STAGNATE:
             items = find_review_items(driver)
             cur_len = len(items)
+            if cur_len <= seen:
+                stagnate += 1
+                if not click_load_more_reviews(driver):
+                    break
+                time.sleep(0.6)
+                items = find_review_items(driver)
+                cur_len = len(items)
 
-        for it in items[seen:]:
-            try:
-                more = it.find_element(By.XPATH, ".//button[contains(.,'더보기')]|.//a[contains(.,'더보기')]")
-                if more.is_displayed():
-                    driver.execute_script("arguments[0].click();", more)
-                    # 클릭 직후 초고속 스윕
-                    driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}));")
-                    close_interfering_popup_strong(driver, max_attempts=1)
-                    driver.execute_script("""
-                      try{ if (window.curation && typeof curation.popClose==='function') curation.popClose(); }catch(e){}
-                      try{ var r=document.getElementById('recoGoodsYn'); if(r) r.value='N'; }catch(e){}
-                      try{ var b=document.querySelector('button.layer_close.type4'); if(b){ b.click(); } }catch(e){}
-                      document.querySelectorAll('.dim,.dimmed,.overlay,.modal-backdrop,.oyDimmed').forEach(d=>{try{d.click()}catch(e){} d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';});
-                    """)
-                    time.sleep(0.1)
-            except: pass
+            for it in items[seen:]:
+                try:
+                    more = it.find_element(By.XPATH, ".//button[contains(.,'더보기')]|.//a[contains(.,'더보기')]")
+                    if more.is_displayed():
+                        driver.execute_script("arguments[0].click();", more)
+                        driver.execute_script("""
+                          document.querySelectorAll('.dim,.dimmed,.overlay,.modal-backdrop,.oyDimmed').forEach(
+                              d=>{d.style.display='none'; d.style.visibility='hidden'; d.style.zIndex='-1';});
+                        """)
+                        time.sleep(0.1)
+                except:
+                    pass
 
-            opt_txt, body_txt = extract_option_and_body(it)
-            if want_norm in ("", "단품", "기본") or normalize_option_label(opt_txt) == want_norm or True:
-                texts.append(body_txt)
-            if len(texts) >= limit: break
+                opt_txt, body_txt = extract_option_and_body(it)
+                if want_norm in ("", "단품", "기본") or normalize_option_label(opt_txt) == want_norm or True:
+                    local_texts.append(body_txt)
+                if len(local_texts) >= limit:
+                    break
 
-        stagnate = 0 if cur_len > seen else stagnate
-        seen = cur_len
+            stagnate = 0 if cur_len > seen else stagnate
+            seen = cur_len
 
-    if not texts:
-        for it in find_review_items(driver):
-            texts.append(extract_option_and_body(it)[1])
-            if len(texts) >= limit: break
-    return texts
+        if not local_texts:
+            for it in find_review_items(driver):
+                local_texts.append(extract_option_and_body(it)[1])
+                if len(local_texts) >= limit:
+                    break
+
+        return local_texts
+
+    page_no = 1
+    while page_no <= max_pages:
+        print(f"[INFO] {code_name_raw}: {page_no}페이지 리뷰 수집 시작")
+        texts.extend(scrape_current_page_reviews())
+        print(f"[INFO] {code_name_raw}: {page_no}페이지 리뷰 {len(texts)}개 수집 완료")
+
+        # 다음 페이지 준비
+        try:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            paging_div = driver.find_element(By.CSS_SELECTOR, "div.pageing")
+
+            if page_no < max_pages:  # max_pages 이후엔 클릭 안 함
+                if page_no % 10 == 0:  # 다음 10페이지 버튼
+                    try:
+                        next_10_btn = paging_div.find_element(By.CSS_SELECTOR, "a.next")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_10_btn)
+                        time.sleep(0.3)
+                        driver.execute_script("arguments[0].click();", next_10_btn)
+                        time.sleep(1)
+                    except Exception:
+                        print(f"[WARN] {code_name_raw}: 다음 10페이지 버튼 없음, 크롤링 종료")
+                        break
+                else:  # 일반 번호 버튼
+                    try:
+                        next_btn = paging_div.find_element(By.CSS_SELECTOR, f"a[data-page-no='{page_no + 1}']")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
+                        time.sleep(0.3)
+                        driver.execute_script("arguments[0].click();", next_btn)
+                        time.sleep(1)
+                    except Exception:
+                        print(f"[WARN] {code_name_raw}: {page_no + 1}페이지 버튼 없음, 크롤링 종료")
+                        break
+
+            page_no += 1
+        except Exception:
+            print(f"[WARN] {code_name_raw}: 페이지 이동 중 오류 발생, 크롤링 종료")
+            break
+
+    return texts[:limit * max_pages]
 
 # -------- 라벨 추출(강화) --------
 def get_radio_label_strong(driver, opt_radio) -> str:
