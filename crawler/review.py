@@ -424,7 +424,7 @@ def extract_option_and_body(it):
             if opt: body = body.replace(opt,"").strip()
     return sanitize_text(opt), sanitize_text(body)
 
-def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10, max_pages: int = 50):
+def collect_review_texts_for_option(driver, code_name_raw: str, limit: int = 10, max_pages: int = 20):
     want_norm = normalize_option_label(code_name_raw)
     open_review_tab(driver)
     wait_review_container(driver, timeout=8)
@@ -653,14 +653,14 @@ def crawl_oliveyoung_reviews_and_preprocess():
     for file in os.listdir(SNAP_DIR):
         if not file.endswith(".json"):
             continue
+
         file_path = os.path.join(SNAP_DIR, file)
         suffix = file.replace("url_", "").replace(".json", "")
-        OUT_PATH_RAW = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_reviews_raw.json")
-        OUT_PATH_PRE = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_reviews_preprocessed.json")
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
             PRODUCT_URLS = []
             for item in data:
                 if isinstance(item, dict):
@@ -674,18 +674,35 @@ def crawl_oliveyoung_reviews_and_preprocess():
             PRODUCT_URLS = list(dict.fromkeys(PRODUCT_URLS))
             print(f"[INFO] {file}에서 {len(PRODUCT_URLS)}개 상품 URL 로드 완료")
 
-            products = []
+            # -------- 이미 저장된 파일 중 마지막 번호 확인 --------
+            def get_start_index(suffix, output_dir):
+                pattern = re.compile(rf"oliveyoung_{suffix}_(\d+)_reviews_raw\.json")
+                max_idx = 0
+                for fname in os.listdir(output_dir):
+                    m = pattern.match(fname)
+                    if m:
+                        idx = int(m.group(1))
+                        if idx > max_idx:
+                            max_idx = idx
+                return max_idx
+
+            start_idx = get_start_index(suffix, OUTPUT_DIR)
+            print(f"[INFO] {suffix}: {start_idx}번째부터 크롤링 시작")
+
+            # -------- URL별 크롤링 --------
             for idx, url in enumerate(PRODUCT_URLS, 1):
+                if idx < start_idx:
+                    continue  # 이미 끝낸 파일은 건너뜀
+
                 driver.get(url)
                 time.sleep(1)
                 close_interfering_popup_strong(driver, max_attempts=1)
 
-                # ✅ 판매 종료 상품이면 바로 스킵
                 if is_product_unavailable(driver):
                     print(f"[SKIP] ({idx}/{len(PRODUCT_URLS)}) 판매 종료된 상품: {url}")
                     continue
 
-                # -------- 기본 정보 수집 --------
+                # 기본 정보 수집
                 brand = get_text_safe_wait(driver, ["p.prd_brand a", ".brand_name a", ".brand_name"])
                 name  = get_text_safe_wait(driver, ["p.prd_name", "h2.prd_name", ".prd_info h2", "h2.goods_txt", "h1"])
                 price = ""
@@ -709,8 +726,9 @@ def crawl_oliveyoung_reviews_and_preprocess():
                     except:
                         pass
 
-                # -------- 리뷰 수집 --------
+                # 리뷰 수집 (max_pages=20)
                 option_reviews = collect_reviews_per_radio_option(driver, max_reviews=MAX_REVIEWS_PER_OPTION)
+                products = []
                 for review_name, texts in option_reviews:
                     rec = {
                         "brand_name": brand,
@@ -727,18 +745,19 @@ def crawl_oliveyoung_reviews_and_preprocess():
                             rec[f"text{j}"] = ""
                     products.append(rec)
 
-                print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료")
+                # -------- 파일 저장 (URL별) --------
+                OUT_PATH_RAW = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_{idx}_reviews_raw.json")
+                OUT_PATH_PRE = os.path.join(OUTPUT_DIR, f"oliveyoung_{suffix}_{idx}_reviews_preprocessed.json")
 
-            # -------- 파일 저장 --------
-            with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
-                json.dump(products, f, ensure_ascii=False, indent=2)
-            print(f"{len(products)}건 저장 완료 -> {OUT_PATH_RAW}")
+                with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
+                    json.dump(products, f, ensure_ascii=False, indent=2)
+                print(f"[{idx}/{len(PRODUCT_URLS)}] {name} | 옵션 {len(option_reviews)}개 완료 -> {OUT_PATH_RAW}")
 
-            processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
-            processor.load_json()
-            processor.preprocess()
-            processor.save_json()
-            print(f"{len(processor.products)}건 전처리 후 저장 완료 -> {OUT_PATH_PRE}")
+                processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
+                processor.load_json()
+                processor.preprocess()
+                processor.save_json()
+                print(f"[{idx}/{len(PRODUCT_URLS)}] 전처리 완료 -> {OUT_PATH_PRE}")
 
         except Exception as e:
             print(f"[ERROR] {file} 처리 중 오류: {e}")
@@ -750,17 +769,6 @@ def crawl_oliveyoung_reviews_and_preprocess():
     try:
         del driver
     except: pass
-
-
-    with open(OUT_PATH_RAW, "w", encoding="utf-8") as f:
-        json.dump(products, f, ensure_ascii=False, indent=2)
-    print(f"{len(products)}건 저장 완료 -> {OUT_PATH_RAW}")
-
-    processor = OliveYoungPreprocessor(input_path=OUT_PATH_RAW, output_path=OUT_PATH_PRE)
-    processor.load_json()
-    processor.preprocess()
-    processor.save_json()
-    print(f"{len(processor.products)}건 전처리 후 저장 완료 -> {OUT_PATH_PRE}")
 
 if __name__ == "__main__":
     t0 = time.time()
