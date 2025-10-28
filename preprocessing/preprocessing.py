@@ -65,11 +65,12 @@ class OliveYoungPreprocessor:
         if not code:
             return ""
 
-        # 1. 특수 공백 문자 제거 (\u3000, \xa0, \u200b 등)
-        code = code.replace("\u3000", " ").replace("\xa0", " ").replace("\u200b", " ")
-        code = code.strip()
+        last_removed = ""  # 마지막으로 제거된 텍스트를 저장
 
-        # 2. 줄바꿈 이후 내용 제거 (가격 등 불필요한 텍스트)
+        # 1. 특수 공백 문자 제거 (\u3000, \xa0, \u200b 등)
+        code = code.replace("\u3000", " ").replace("\xa0", " ").replace("\u200b", " ").strip()
+
+        # 2. 줄바꿈 이후 내용 제거
         code = re.sub(r'\n.*$', '', code).strip()
 
         # 3. 전각 문자 → 반각 문자 변환
@@ -78,60 +79,93 @@ class OliveYoungPreprocessor:
         if code == "단품":
             return code
 
-        # 4. 괄호 감싸짐 확인 → 양쪽 괄호와 공백만 제거 (내부 괄호가 없는 경우만)
-        if re.fullmatch(r'^\[\s*[^\[\]]+\s*\]$', code):
+        # 4. 괄호 제거 (전체 괄호 감싸짐 확인 후)
+        match = re.fullmatch(r'^\[\s*[^\[\]]+\s*\]$', code)
+        if match:
+            last_removed = code
             code = re.sub(r'^\[\s*(.*?)\s*\]$', r'\1', code).strip()
             wrapped = True
-        elif re.fullmatch(r'^\(\s*[^\(\)]+\s*\)$', code):
-            code = re.sub(r'^\(\s*(.*?)\s*\)$', r'\1', code).strip()
-            wrapped = True
         else:
-            wrapped = False
+            match = re.fullmatch(r'^\(\s*[^\(\)]+\s*\)$', code)
+            if match:
+                last_removed = code
+                code = re.sub(r'^\(\s*(.*?)\s*\)$', r'\1', code).strip()
+                wrapped = True
+            else:
+                wrapped = False
 
-
-        # 5. 기존 전처리 적용 (괄호 안 내용 제거 등, 전체 괄호 감싸짐이 아닌 경우만)
+        # 5. 전체 괄호가 아니면 일반 괄호 제거
         if not wrapped:
-            code = re.sub(r'\[.*?\]', '', code)
+            matches = re.findall(r'\(.*?\)', code)
+            for m in matches:
+                last_removed = m
+                code = code.replace(m, '')
 
+        # 6. (품절) 제거
         code = re.sub(r'\(품절\)', '', code)
-        code = re.sub(r'\(.*?\)', '', code)
-        code = re.sub(r'\b\d+\s*\+\s*\d+\b', '', code)
-        code = re.sub(r'\*\s*\d+\s*개입', '', code)
-        code = re.sub(r'\s+', ' ', code).strip()  
 
-        # NEW, NEW), New), new) 등 모두 제거 + 뒤 공백도 제거
-        code = re.sub(r'\bNEW\)?\s*', '', code, flags=re.IGNORECASE)
+        # 7. 숫자+숫자 제거
+        matches = re.findall(r'\b\d+\s*\+\s*\d+\b', code)
+        for m in matches:
+            last_removed = m
+            code = code.replace(m, '')
 
+        # 8. *숫자, *숫자EA, X숫자, X숫자EA 제거
+        matches = re.findall(r'\s*(\*|[xX×])\d+(?:EA)?', code, flags=re.IGNORECASE)
+        for m in matches:
+            last_removed = m
+            code = re.sub(re.escape(m), '', code, flags=re.IGNORECASE)
 
-        code = re.sub(r'[_\s]*?(더블\s*기획|듀오\s*기획|한정\s*기획|증정\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', '', code)
+        # 9. NEW, NEW), New), new) 등 제거
+        matches = re.findall(r'\bNEW\)?', code, flags=re.IGNORECASE)
+        for m in matches:
+            last_removed = m
+            code = code.replace(m, '')
 
-        # *숫자, *숫자EA, X숫자, X숫자EA 제거
-        code = re.sub(r'\s*(\*|[xX×])\d+(?:EA)?', '', code, flags=re.IGNORECASE)
+        # 10. 복합 기획/세트 제거
+        matches = re.findall(r'[_\s]*?(더블\s*기획|듀오\s*기획|한정\s*기획|증정\s*기획|더블\s*세트|기획\s*세트)[_\s]*?', code)
+        for m in matches:
+            last_removed = m
+            code = code.replace(m, '')
 
-        # 1) '세트', '기획' 등 제거
-        code = re.sub(r'[\s_+/]?(세트|기획|증정|듀오팩)', '', code)
+        # 11. 세트, 기획 등 단독 제거
+        matches = re.findall(r'[\s_+/]?(세트|기획|증정|듀오팩)', code)
+        for m in matches:
+            last_removed = m
+            code = code.replace(m, '')
 
-        # 6. 숫자+단위 제거 (문자와 섞여 있는 경우만)
+        # 12. 숫자+단위 제거 (문자와 섞여 있는 경우만)
         num_unit_pattern = r'\d+(\.\d+)?\s*(g|ml|oz|종|개|Color|color|colors|Colors|컬러|칼라|입|개입|회분)\b'
         num_unit_combo_pattern = r'\d+(?:\.\d+)?\s*(?:g|ml|oz)\s*\+\s*\d+(?:\.\d+)?\s*(?:g|ml|oz)'
-        # ✅ 숫자+단위+숫자+단위 조합이 있으면, 이 단계에서 제거하지 않음
+
         if re.fullmatch(num_unit_combo_pattern, code, flags=re.IGNORECASE):
             pass
         elif re.search(num_unit_pattern, code, flags=re.IGNORECASE) and not re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE):
+            last_removed = re.search(num_unit_pattern, code, flags=re.IGNORECASE).group(0)
             code = re.sub(num_unit_pattern, '', code, flags=re.IGNORECASE).strip()
-        # ✅ 7. 숫자+단위 단독 or 숫자+단위+숫자+단위 단독일 경우, 이후 제거하지 않고 바로 리턴
+
         if re.fullmatch(num_unit_pattern, code, flags=re.IGNORECASE) or re.fullmatch(num_unit_combo_pattern, code, flags=re.IGNORECASE):
             return code.strip()
 
-        # 8. (이제 단독이 아닌 경우만) 숫자+단위+숫자+단위 패턴 제거
-        code = re.sub(num_unit_combo_pattern, '', code, flags=re.IGNORECASE)
+        # 13. 숫자+단위+숫자+단위 제거 (단독이 아닌 경우)
+        matches = re.findall(num_unit_combo_pattern, code, flags=re.IGNORECASE)
+        for m in matches:
+            last_removed = m
+            code = code.replace(m, '')
 
-        # 2) '단품' 단독인지 확인 후 제거 여부 결정
+        # 14. 단품 제거
         if code.strip() not in ["단품"]:
-            code = re.sub(r'[\s_+/]?단품', '', code)
+            matches = re.findall(r'[\s_+/]?단품', code)
+            for m in matches:
+                last_removed = m
+                code = code.replace(m, '')
 
-        # 중복 공백 제거 + 양쪽 공백 제거
+        # 15. 공백 정리
         code = re.sub(r'\s+', ' ', code).strip()
+
+        # ✅ 최종 문자열이 공백이면 마지막 제거한 것 복원
+        if code == "" and last_removed:
+            code = last_removed.strip()
 
         return code
 
