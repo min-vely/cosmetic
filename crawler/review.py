@@ -642,8 +642,8 @@ def crawl_oliveyoung_reviews_and_preprocess():
     )
 
     driver = uc.Chrome(options=chrome_options)
-    driver.set_page_load_timeout(30)
-    driver.set_script_timeout(20)
+    driver.set_page_load_timeout(90)       # 페이지 전체 로드 제한 (기본은 30초)
+    driver.set_script_timeout(45)           # JS 실행 제한 시간 (기본은 30초)
     inject_popup_killer(driver)
 
     OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data")

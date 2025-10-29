@@ -94,9 +94,9 @@ class OliveYoungPreprocessor:
             else:
                 wrapped = False
 
-        # 5. 전체 괄호가 아니면 일반 괄호 제거
+        # 5. 전체 괄호가 아니면 일반 괄호 제거 ((), [] 모두)
         if not wrapped:
-            matches = re.findall(r'\(.*?\)', code)
+            matches = re.findall(r'[\(\[].*?[\)\]]', code)
             for m in matches:
                 last_removed = m
                 code = code.replace(m, '')
