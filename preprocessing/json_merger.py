@@ -3,9 +3,9 @@ import os
 from collections import defaultdict
 
 # ---------------- 파일 경로 ----------------
-PRODUCT_JSON_PATH = "../data/oliveyoung_lip_makeup.json"
-REVIEW_JSON_PATH = "../data/oliveyoung_lip_makeup_reviews_preprocessed.json"
-OUTPUT_JSON_PATH = "../data/oliveyoung_lip_makeup_merged.json"
+PRODUCT_JSON_PATH = "../data/oliveyoung_bbncc.json"
+REVIEW_JSON_PATH = "../data/review/oliveyoung_bbncc_reviews_preprocessed.json"
+OUTPUT_JSON_PATH = "../data/oliveyoung_bbncc_merged.json"
 
 # ---------------- JSON 불러오기 ----------------
 with open(PRODUCT_JSON_PATH, "r", encoding="utf-8") as f:
@@ -36,8 +36,9 @@ for pname, product_list in product_map.items():
         # code_name과 review_name 부분 매칭
         for r in review_list:
             review_name = r.get("review_name", "")
-            if code_name and review_name and (code_name in review_name or review_name in code_name):
+            if code_name and review_name and code_name.strip() == review_name.strip():
                 matched_reviews.append(r)
+
 
         merged_item = p.copy()
 
@@ -46,8 +47,12 @@ for pname, product_list in product_map.items():
             for mr in matched_reviews:
                 for key in sorted(mr.keys()):
                     if key.startswith("text"):
-                        texts.append(mr[key])
-            merged_item["texts"] = texts
+                        val = mr[key].strip()
+                        if val:  # 빈 문자열은 제외
+                            texts.append(val)
+
+            # 전부 빈 문자열이었다면, texts = [] 로 처리
+            merged_item["texts"] = texts if texts else []
         else:
             merged_item["texts"] = []
 
