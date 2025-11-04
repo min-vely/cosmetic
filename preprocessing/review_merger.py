@@ -13,23 +13,24 @@ def merge_json_files(base_dir):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # ✅ 테스트용: 특정 폴더만 지정
-    category_list = ["blush"]   # ← 여기에 원하는 폴더 이름 입력 (예: ["blush"], ["concealer"] 등)
+    # ✅ 모든 하위 폴더 자동 탐색
+    category_list = [
+        name for name in os.listdir(input_dir)
+        if os.path.isdir(os.path.join(input_dir, name))
+    ]
+
+    if not category_list:
+        print(f"[WARN] review_number 폴더 내에 하위 폴더가 없습니다.")
+        return
 
     for category in category_list:
         category_path = os.path.join(input_dir, category)
-        if not os.path.isdir(category_path):
-            print(f"[WARN] 폴더 없음: {category_path}")
-            continue
-
         print(f"\n[INFO] '{category}' 폴더 처리 중...")
 
         # preprocessed / raw 두 가지 타입 처리
         for file_type in ["preprocessed", "raw"]:
             pattern = re.compile(rf"oliveyoung_{category}_(\d+)_reviews_{file_type}\.json$")
-            json_files = [
-                f for f in os.listdir(category_path) if pattern.match(f)
-            ]
+            json_files = [f for f in os.listdir(category_path) if pattern.match(f)]
 
             if not json_files:
                 print(f"  - '{file_type}' 파일 없음, 건너뜀.")
