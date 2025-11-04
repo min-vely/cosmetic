@@ -14,7 +14,7 @@ def merge_json_files(base_dir):
     os.makedirs(output_dir, exist_ok=True)
 
     # ✅ 테스트용: 특정 폴더만 지정
-    category_list = ["cushion"]   # ← 여기에 원하는 폴더 이름 입력 (예: ["blush"], ["concealer"] 등)
+    category_list = ["blush"]   # ← 여기에 원하는 폴더 이름 입력 (예: ["blush"], ["concealer"] 등)
 
     for category in category_list:
         category_path = os.path.join(input_dir, category)

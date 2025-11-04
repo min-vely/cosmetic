@@ -1,11 +1,12 @@
 import json
 import os
+import re
 from collections import defaultdict
 
 # ---------------- 파일 경로 ----------------
-PRODUCT_JSON_PATH = "../data/oliveyoung_cushion.json"
-REVIEW_JSON_PATH = "../data/review/oliveyoung_cushion_reviews_preprocessed.json"
-OUTPUT_JSON_PATH = "../data/oliveyoung_cushion_merged.json"
+PRODUCT_JSON_PATH = "../data/oliveyoung_blush.json"
+REVIEW_JSON_PATH = "../data/review/oliveyoung_blush_reviews_preprocessed.json"
+OUTPUT_JSON_PATH = "../data/oliveyoung_blush_merged.json"
 
 # ---------------- JSON 불러오기 ----------------
 with open(PRODUCT_JSON_PATH, "r", encoding="utf-8") as f:
@@ -39,6 +40,13 @@ for pname, product_list in product_map.items():
             if code_name and review_name and code_name.strip() == review_name.strip():
                 matched_reviews.append(r)
 
+        # 🎯 예외 케이스: product_name 내 code_name 1개, review_name 1개면 무조건 병합
+        if not matched_reviews:
+            unique_code_names = {pp.get("code_name", "").strip() for pp in product_list if pp.get("code_name")}
+            unique_review_names = {rr.get("review_name", "").strip() for rr in review_list if rr.get("review_name")}
+
+            if len(unique_code_names) == 1 and len(unique_review_names) == 1:
+                matched_reviews = review_list.copy()  # 전부 병합
 
         merged_item = p.copy()
 
@@ -49,11 +57,14 @@ for pname, product_list in product_map.items():
                 if any("등록된 리뷰가 없습니다" in str(v) for v in mr.values()):
                     continue
 
-                for key in sorted(mr.keys()):
-                    if key.startswith("text"):
-                        val = str(mr[key]).strip()
-                        if val and "등록된 리뷰가 없습니다" not in val:
-                            texts.append(val)
+                text_keys = [k for k in mr.keys() if k.startswith("text")]
+                # text 뒤의 숫자 기준으로 정렬 (ex. text1, text2, ..., text100)
+                text_keys.sort(key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0)
+
+                for key in text_keys:
+                    val = str(mr[key]).strip()
+                    if val and "등록된 리뷰가 없습니다" not in val:
+                        texts.append(val)
 
             # 전부 빈 문자열이거나 안내 문구만 있던 경우
             merged_item["texts"] = texts if texts else []
