@@ -3,9 +3,9 @@ import os
 from collections import defaultdict
 
 # ---------------- 파일 경로 ----------------
-PRODUCT_JSON_PATH = "../data/oliveyoung_bbncc.json"
-REVIEW_JSON_PATH = "../data/review/oliveyoung_bbncc_reviews_preprocessed.json"
-OUTPUT_JSON_PATH = "../data/oliveyoung_bbncc_merged.json"
+PRODUCT_JSON_PATH = "../data/oliveyoung_cushion.json"
+REVIEW_JSON_PATH = "../data/review/oliveyoung_cushion_reviews_preprocessed.json"
+OUTPUT_JSON_PATH = "../data/oliveyoung_cushion_merged.json"
 
 # ---------------- JSON 불러오기 ----------------
 with open(PRODUCT_JSON_PATH, "r", encoding="utf-8") as f:
@@ -45,13 +45,17 @@ for pname, product_list in product_map.items():
         if matched_reviews:
             texts = []
             for mr in matched_reviews:
+                # '등록된 리뷰가 없습니다' 문구가 포함되어 있으면 스킵
+                if any("등록된 리뷰가 없습니다" in str(v) for v in mr.values()):
+                    continue
+
                 for key in sorted(mr.keys()):
                     if key.startswith("text"):
-                        val = mr[key].strip()
-                        if val:  # 빈 문자열은 제외
+                        val = str(mr[key]).strip()
+                        if val and "등록된 리뷰가 없습니다" not in val:
                             texts.append(val)
 
-            # 전부 빈 문자열이었다면, texts = [] 로 처리
+            # 전부 빈 문자열이거나 안내 문구만 있던 경우
             merged_item["texts"] = texts if texts else []
         else:
             merged_item["texts"] = []
@@ -98,17 +102,23 @@ merged_data = merge_thumb_color(merged_data)
 # ---------------- 중복 제거 ----------------
 def deduplicate_by_code_name(items):
     """
-    code_name 부분 문자열 기준으로 동일 제품 그룹 중 첫 번째만 남기기
+    product_name이 같은 그룹 내에서,
+    code_name 완전 일치 기준으로 중복 제거
     """
-    seen = set()
+    grouped = defaultdict(list)
+    for item in items:
+        grouped[item.get("product_name", "")].append(item)
+
     unique_items = []
 
-    for item in items:
-        code_name = item.get("code_name", "")
-        if any(code_name in s or s in code_name for s in seen):
-            continue
-        seen.add(code_name)
-        unique_items.append(item)
+    for pname, group in grouped.items():
+        seen = set()
+        for item in group:
+            code_name = item.get("code_name", "")
+            if code_name in seen:
+                continue
+            seen.add(code_name)
+            unique_items.append(item)
 
     return unique_items
 
