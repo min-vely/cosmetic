@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify, render_template, session
 import os
+import time
 import json
 import base64
 import mimetypes
 from dotenv import load_dotenv
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -14,7 +15,7 @@ import requests
 from google import genai
 from google.genai import types
 from io import BytesIO
-from PIL import Image
+from tqdm import tqdm
 
 # ------------------------------- 0. 초기 설정 -------------------------------
 load_dotenv()
@@ -23,8 +24,8 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "change-me")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "data", "oliveyoung_lip_makeup_merged.json")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
+LOG_PATH = os.path.join(BASE_DIR, "chromadblog.txt")  # ✅ 추가: 로그 파일 경로
 
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY  # 세션 사용
@@ -32,12 +33,33 @@ app.secret_key = FLASK_SECRET_KEY  # 세션 사용
 # ------------------------------- 1. Chroma 벡터스토어 캐싱 -------------------------------
 embedding = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
 
+def log_message(msg):  # ✅ 추가: 로그 기록 함수
+    print(msg)
+    with open(LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {msg}\n")
+
 if not os.path.exists(CHROMA_DIR):
-    print("[INFO] ChromaDB가 없어 새로 생성합니다...")
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    log_message("[INFO] ChromaDB가 없어 새로 생성합니다...")
+
+    # ✅ merged 폴더 내 모든 JSON 파일 통합 로드
+    MERGED_DIR = os.path.join(BASE_DIR, "data", "merged")
+    data = []
+    for fname in os.listdir(MERGED_DIR):
+        if fname.endswith(".json"):
+            fpath = os.path.join(MERGED_DIR, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = json.load(f)
+                    if isinstance(content, list):
+                        data.extend(content)
+                    else:
+                        data.append(content)
+            except Exception as e:
+                log_message(f"[WARN] 파일 읽기 실패: {fname} -> {e}")
+
+    # ---------------- 나머지 기존 코드 그대로 유지 ----------------
     docs = []
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=50)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     for product in data:
         for review in product.get("texts", []):
             chunks = text_splitter.split_text(review)
@@ -63,7 +85,43 @@ if not os.path.exists(CHROMA_DIR):
                         "thumb_color": thumb
                     }
                 ))
-    vectordb = Chroma.from_documents(docs, embedding, persist_directory=CHROMA_DIR)
+
+    vectordb = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedding)
+
+    BATCH_SIZE = 500  # 한 번에 500개씩 임베딩
+    total_batches = len(range(0, len(docs), BATCH_SIZE))
+
+    # ✅ 추가: 이전 진행 상태 복원
+    start_batch = 0
+    if os.path.exists(LOG_PATH):
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                if "✅ 진행 완료 배치" in line:
+                    try:
+                        start_batch = int(line.strip().split(":")[-1])
+                    except:
+                        pass
+    log_message(f"[INFO] 총 배치 수: {total_batches}, 시작 배치 인덱스: {start_batch}")
+
+    for i in tqdm(range(start_batch, len(docs) // BATCH_SIZE + 1), desc="Embedding in batches"):
+        batch_start = i * BATCH_SIZE
+        batch = docs[batch_start:batch_start + BATCH_SIZE]
+        if not batch:
+            continue
+        try:
+            vectordb.add_documents(batch)
+            vectordb.persist()
+            log_message(f"✅ 진행 완료 배치: {i}")
+        except Exception as e:
+            log_message(f"[WARN] 임베딩 중 오류 발생: {e}")
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
+                log_message("[ERROR] API 한도 또는 요금 초과로 중단됩니다. 진행 상태가 저장되었습니다.")
+                break
+            time.sleep(15)
+            continue
+
+        time.sleep(10)
+
     vectordb.persist()
 else:
     vectordb = Chroma(persist_directory=CHROMA_DIR, embedding_function=embedding)
@@ -78,11 +136,25 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model.to(device)
 
 def rerank(query, docs):
-    pairs = [[query, d.page_content] for d in docs]
-    inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors="pt", max_length=512)
+    if not docs:  # ✅ 빈 리스트 방어
+        return []
+
+    pairs = [[query, d.page_content] for d in docs if d.page_content.strip()]
+    if not pairs:  # ✅ 문서 내용이 비어 있는 경우 방어
+        return []
+
+    inputs = tokenizer(
+        pairs,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+        max_length=512
+    )
     inputs = {k: v.to(device) for k, v in inputs.items()}
+
     with torch.no_grad():
         scores = model(**inputs).logits.squeeze(-1).cpu().tolist()
+
     scored = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
     return [d for d, s in scored]
 
@@ -127,7 +199,6 @@ def recommend_next(user_id="default"):
         raw_answer = llm.predict(prompt)
         answer = raw_answer.strip()
 
-        # 세션에 현재 추천 제품 저장 (가상 화장용)
         session["last_swatch_url"] = images[0] if images else None
         session["last_product_info"] = {
             "product_name": d.metadata.get("product_name", ""),
@@ -163,7 +234,23 @@ def is_recommendation_query(user_id, user_input):
 # ------------------------------- 7. RAG 파이프라인 -------------------------------
 def rag_pipeline_first(query, user_id="default"):
     retrieved_docs = retriever.get_relevant_documents(query)
+    if not retrieved_docs:  # ✅ 검색 결과가 없을 경우
+        return {
+            "response": "관련된 제품을 찾지 못했습니다.",
+            "images": [],
+            "product_names": [],
+            "code_names": [],
+        }
+
     reranked_docs = rerank(query, retrieved_docs)
+    if not reranked_docs:  # ✅ 리랭크 결과가 없을 경우
+        return {
+            "response": "적합한 제품을 찾지 못했습니다.",
+            "images": [],
+            "product_names": [],
+            "code_names": [],
+        }
+
     session_cache[user_id]["last_query"] = query
     session_cache[user_id]["docs"] = reranked_docs
     session_cache[user_id]["already"] = set()
