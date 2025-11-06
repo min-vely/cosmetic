@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify, render_template, session
 from flask_session import Session   # ✅ 추가
 import os
+import uuid
 import time
 import json
 import base64
+import requests
 import mimetypes
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -17,6 +19,7 @@ from google import genai
 from google.genai import types
 from io import BytesIO
 from tqdm import tqdm
+from flask import request, jsonify, session
 
 # ------------------------------- 0. 초기 설정 -------------------------------
 load_dotenv()
@@ -332,17 +335,32 @@ def apply_makeup():
     if not swatch_url:
         return jsonify({"error": "추천된 제품 이미지가 없습니다."}), 400
 
-    # ------------------ swatch_bytes 세션 캐싱 ------------------
-    swatch_bytes = session.get("last_swatch_bytes")
-    if not swatch_bytes or session.get("last_swatch_url") != swatch_url:
+    # ------------------ swatch_bytes 캐싱 수정 ------------------
+    swatch_path = session.get("last_swatch_path")
+    cached_url = session.get("last_swatch_url")
+
+    # 캐시된 파일이 없거나 URL이 바뀌었거나 파일이 삭제된 경우 새로 다운로드
+    if not swatch_path or cached_url != swatch_url or not os.path.exists(swatch_path):
         try:
-            resp = requests.get(swatch_url, timeout=10)  # 최대 10초 대기
+            resp = requests.get(swatch_url, timeout=10)
             resp.raise_for_status()
-            swatch_bytes = resp.content
-            session["last_swatch_bytes"] = swatch_bytes
+
+            # /tmp 디렉토리에 임시 파일 저장
+            os.makedirs("/tmp", exist_ok=True)
+            swatch_path = f"/tmp/swatch_{uuid.uuid4().hex}.png"
+            with open(swatch_path, "wb") as f:
+                f.write(resp.content)
+
+            # 세션에는 파일 경로와 URL만 저장
+            session["last_swatch_path"] = swatch_path
             session["last_swatch_url"] = swatch_url
+
         except Exception as e:
             return jsonify({"error": f"이미지 로드 실패: {e}"}), 400
+
+    # 임시 파일에서 swatch_bytes 읽기
+    with open(swatch_path, "rb") as f:
+        swatch_bytes = f.read()
     # ------------------------------------------------------------
 
     client = genai.Client(api_key=GOOGLE_API_KEY)
@@ -385,7 +403,6 @@ def apply_makeup():
 
     except Exception as e:
         return jsonify({"error": f"Gemini API 오류: {e}"}), 500
-
 
 # ------------------------------- 10. 실행 -------------------------------
 if __name__ == "__main__":
