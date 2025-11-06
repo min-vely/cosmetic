@@ -196,7 +196,7 @@ def recommend_next(user_id="default"):
 
 추천할 제품명과 색상을 맨 앞에 표시하고, 그 뒤에 리뷰 기반으로 간결하게 추천 이유를 한두 문장으로 작성하세요.
 """
-        raw_answer = llm.predict(prompt)
+        raw_answer = llm.invoke(prompt).content
         answer = raw_answer.strip()
 
         session["last_swatch_url"] = images[0] if images else None
@@ -228,7 +228,7 @@ def is_recommendation_query(user_id, user_input):
 추천이면 "추천", 아니면 "일반"만 출력하세요.
 {context_text}
 """
-    answer = llm.predict(prompt).strip()
+    answer = llm.invoke(prompt).content.strip()
     return answer.lower() == "추천"
 
 # ------------------------------- 7. RAG 파이프라인 -------------------------------
@@ -287,7 +287,7 @@ def chat():
 당신은 뷰티 전문가입니다. 제품 추천은 하지 않고, 일반 대화만 3줄 이내로 답변하세요.
 {context_text}
 """
-        answer = llm.predict(prompt).strip()
+        answer = llm.invoke(prompt).content.strip()
         result = {"response": answer, "images": [], "product_names": [], "code_names": []}
 
     session_cache[user_id]["history"].append({"role": "bot", "text": result["response"]})
