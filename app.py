@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, session
+from flask_session import Session   # ✅ 추가
 import os
 import time
 import json
@@ -28,7 +29,14 @@ CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 LOG_PATH = os.path.join(BASE_DIR, "chromadblog.txt")  # ✅ 추가: 로그 파일 경로
 
 app = Flask(__name__)
-app.secret_key = FLASK_SECRET_KEY  # 세션 사용
+app.secret_key = FLASK_SECRET_KEY  # 세션 키 설정
+
+# ✅ 서버 세션 설정 (파일 기반)
+app.config["SESSION_TYPE"] = "filesystem"  # 세션을 서버 파일에 저장
+app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"  # 세션 저장 디렉토리
+app.config["SESSION_PERMANENT"] = False  # 브라우저 종료 시 세션 만료
+app.config["SESSION_USE_SIGNER"] = True  # 서명된 쿠키 사용
+Session(app)  # ✅ 서버 세션 활성화
 
 # ------------------------------- 1. Chroma 벡터스토어 캐싱 -------------------------------
 embedding = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
