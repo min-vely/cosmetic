@@ -233,7 +233,7 @@ def is_recommendation_query(user_id, user_input):
 
 # ------------------------------- 7. RAG 파이프라인 -------------------------------
 def rag_pipeline_first(query, user_id="default"):
-    retrieved_docs = retriever.get_relevant_documents(query)
+    retrieved_docs = retriever.invoke(query)
     if not retrieved_docs:  # ✅ 검색 결과가 없을 경우
         return {
             "response": "관련된 제품을 찾지 못했습니다.",
