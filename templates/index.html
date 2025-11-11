@@ -8,11 +8,67 @@
       font-family: "Pretendard", sans-serif;
       background-color: #fff5f8;
       display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* === 헤더 === */
+    #header {
+      width: 100%;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    #header h1 {
+      margin: 0;
+      font-size: 20px;
+      color: #c64061;
+    }
+
+    #user-info {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    #user-info button, #user-info a {
+      background: #c64061;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    #user-info button:hover, #user-info a:hover {
+      background: #a83550;
+    }
+
+    #username-display {
+      color: #333;
+      font-weight: 500;
+    }
+
+    /* === 메인 컨테이너 === */
+    #main-container {
+      display: flex;
       flex-direction: row;
       align-items: flex-start;
       justify-content: center;
-      height: 100vh;
-      margin: 0;
+      flex-grow: 1;
+      width: 100%;
       gap: 24px;
       padding: 24px;
       box-sizing: border-box;
@@ -97,11 +153,95 @@
       animation: blink 1s infinite;
     }
     @keyframes blink { 0%,50%,100%{opacity:0;} 25%,75%{opacity:1;} }
+
+    /* === 검색 기록 모달 === */
+    #history-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    #history-modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    #history-modal h2 {
+      margin: 0 0 16px 0;
+      color: #c64061;
+      font-size: 24px;
+    }
+    #history-modal-close {
+      float: right;
+      background: #eee;
+      border: none;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 32px;
+    }
+    #history-modal-close:hover {
+      background: #ddd;
+    }
+    .history-item {
+      background: #f9f9f9;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      border-left: 4px solid #c64061;
+    }
+    .history-item-query {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+    .history-item-response {
+      font-size: 14px;
+      color: #666;
+      margin: 8px 0;
+      line-height: 1.4;
+    }
+    .history-item-meta {
+      font-size: 12px;
+      color: #999;
+    }
+    .history-empty {
+      text-align: center;
+      color: #999;
+      padding: 40px 0;
+    }
   </style>
 </head>
 <body>
-  <!-- 왼쪽: 챗봇 -->
-  <div id="chat-container">
+  <!-- 헤더 -->
+  <div id="header">
+    <h1>💄 화장품 추천 챗봇</h1>
+    <div id="user-info">
+      <span id="username-display" style="display: none;"></span>
+      <button id="history-btn" style="display: none;">검색 기록</button>
+      <button id="logout-btn" style="display: none;">로그아웃</button>
+      <a href="/login" id="login-link">로그인</a>
+      <a href="/signup" id="signup-link">회원가입</a>
+    </div>
+  </div>
+
+  <!-- 메인 컨테이너 -->
+  <div id="main-container">
+    <!-- 왼쪽: 챗봇 -->
+    <div id="chat-container">
     <div id="messages"></div>
     <div id="input-area">
       <input id="user-input" type="text" placeholder="메시지를 입력하세요..." />
@@ -117,11 +257,116 @@
     <input id="file-input" type="file" accept="image/*" />
     <button id="tryon-btn" disabled>합성하기</button>
     <p style="font-size:13px; color:#666; text-align:center;">
-      내 사진을 올린 뒤 “합성하기”를 누르면<br>최근 추천된 제품 발색과 합성됩니다.
+      내 사진을 올린 뒤 "합성하기"를 누르면<br>최근 추천된 제품 발색과 합성됩니다.
     </p>
+  </div>
+  </div> <!-- main-container 닫기 -->
+
+  <!-- 검색 기록 모달 -->
+  <div id="history-modal">
+    <div id="history-modal-content">
+      <button id="history-modal-close">✕</button>
+      <h2>📜 검색 기록</h2>
+      <div id="history-list"></div>
+    </div>
   </div>
 
   <script>
+    // === 사용자 인증 상태 확인 ===
+    async function checkAuthStatus() {
+      try {
+        const response = await fetch('/user/me');
+        const data = await response.json();
+
+        if (data.authenticated) {
+          document.getElementById('username-display').textContent = `${data.username}님`;
+          document.getElementById('username-display').style.display = 'inline';
+          document.getElementById('history-btn').style.display = 'inline-block';
+          document.getElementById('logout-btn').style.display = 'inline-block';
+          document.getElementById('login-link').style.display = 'none';
+          document.getElementById('signup-link').style.display = 'none';
+        } else {
+          document.getElementById('username-display').style.display = 'none';
+          document.getElementById('history-btn').style.display = 'none';
+          document.getElementById('logout-btn').style.display = 'none';
+          document.getElementById('login-link').style.display = 'inline-block';
+          document.getElementById('signup-link').style.display = 'inline-block';
+        }
+      } catch (error) {
+        console.error('인증 상태 확인 실패:', error);
+      }
+    }
+
+    // 로그아웃 버튼
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/logout');
+        if (response.ok) {
+          alert('로그아웃되었습니다.');
+          window.location.reload();
+        }
+      } catch (error) {
+        console.error('로그아웃 실패:', error);
+      }
+    });
+
+    // 검색 기록 버튼
+    document.getElementById('history-btn').addEventListener('click', async () => {
+      try {
+        const modal = document.getElementById('history-modal');
+        const historyList = document.getElementById('history-list');
+
+        // 모달 표시
+        modal.style.display = 'flex';
+        historyList.innerHTML = '<p style="text-align:center;color:#999;">로딩 중...</p>';
+
+        const response = await fetch('/history');
+        const data = await response.json();
+
+        if (response.ok) {
+          // 검색 기록 표시
+          if (data.histories && data.histories.length > 0) {
+            historyList.innerHTML = data.histories.map(h => {
+              const date = new Date(h.created_at).toLocaleString('ko-KR');
+              return `
+                <div class="history-item">
+                  <div class="history-item-query">🔍 ${h.query}</div>
+                  <div class="history-item-response">${h.response || '응답 없음'}</div>
+                  <div class="history-item-meta">
+                    ${date} | ${h.is_recommendation ? '추천' : '일반'}
+                  </div>
+                </div>
+              `;
+            }).join('');
+          } else {
+            historyList.innerHTML = '<div class="history-empty">검색 기록이 없습니다.</div>';
+          }
+        } else {
+          historyList.innerHTML = `<div class="history-empty">오류: ${data.error || '검색 기록을 불러올 수 없습니다.'}</div>`;
+        }
+      } catch (error) {
+        console.error('검색 기록 조회 실패:', error);
+        const historyList = document.getElementById('history-list');
+        historyList.innerHTML = '<div class="history-empty">검색 기록을 불러오는 중 오류가 발생했습니다.</div>';
+      }
+    });
+
+    // 모달 닫기
+    document.getElementById('history-modal-close').addEventListener('click', () => {
+      document.getElementById('history-modal').style.display = 'none';
+    });
+
+    // 모달 배경 클릭 시 닫기
+    document.getElementById('history-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'history-modal') {
+        document.getElementById('history-modal').style.display = 'none';
+      }
+    });
+
+    // 페이지 로드 시 인증 상태 확인
+    checkAuthStatus();
+
+    // === 기존 챗봇 로직 ===
     const input = document.getElementById("user-input");
     const sendBtn = document.getElementById("send-btn");
     const nextBtn = document.getElementById("next-btn");
@@ -133,6 +378,7 @@
 
     let userId = "default";
     let lastSwatchUrl = null; // ✅ 최근 추천된 발색 이미지 저장
+
 
     // === 사진 미리보기 ===
     fileInput.addEventListener("change", () => {
@@ -167,6 +413,9 @@
       const text = input.value.trim();
       if (!text) return;
 
+      // 차원을 1536으로 고정
+      const selectedDimension = 1536;
+
       messages.innerHTML += `<div class="message user">🙋‍♀️ ${text}</div>`;
       input.value = "";
       const typingId = addTypingIndicator();
@@ -174,13 +423,36 @@
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, user_id: userId })
+        body: JSON.stringify({ message: text, user_id: userId, dimension: selectedDimension })
       });
       const data = await res.json();
       const typingElem = document.getElementById(typingId);
       if (typingElem) typingElem.remove();
 
       messages.innerHTML += `<div class="message bot">🤖 ${data.response}</div>`;
+
+      // 소요 시간 표시
+      if (data.timing) {
+        const timingDiv = document.createElement("div");
+        timingDiv.className = "message bot";
+        timingDiv.style.fontSize = "11px";
+        timingDiv.style.color = "#999";
+        timingDiv.style.marginTop = "-8px";
+
+        let timingText = `⏱️ 총 소요시간: ${data.timing.total.toFixed(2)}초`;
+        if (data.timing.retriever) {
+          timingText += ` | Retriever: ${data.timing.retriever.toFixed(2)}초`;
+        }
+        if (data.timing.reranker) {
+          timingText += ` | Reranker: ${data.timing.reranker.toFixed(2)}초`;
+        }
+        if (data.timing.llm) {
+          timingText += ` | LLM: ${data.timing.llm.toFixed(2)}초`;
+        }
+
+        timingDiv.textContent = timingText;
+        messages.appendChild(timingDiv);
+      }
       if (data.images && data.images.length > 0) {
         lastSwatchUrl = data.images[0]; // ✅ 최근 추천 이미지 저장
 
@@ -226,6 +498,24 @@
       if (typingElem) typingElem.remove();
 
       messages.innerHTML += `<div class="message bot">🤖 ${data.response}</div>`;
+
+      // 소요 시간 표시
+      if (data.timing) {
+        const timingDiv = document.createElement("div");
+        timingDiv.className = "message bot";
+        timingDiv.style.fontSize = "11px";
+        timingDiv.style.color = "#999";
+        timingDiv.style.marginTop = "-8px";
+
+        let timingText = `⏱️ 총 소요시간: ${data.timing.total.toFixed(2)}초`;
+        if (data.timing.llm) {
+          timingText += ` | LLM: ${data.timing.llm.toFixed(2)}초`;
+        }
+
+        timingDiv.textContent = timingText;
+        messages.appendChild(timingDiv);
+      }
+
       if (data.images && data.images.length > 0) {
         lastSwatchUrl = data.images[0]; // ✅ 다음 추천 시에도 갱신
 
