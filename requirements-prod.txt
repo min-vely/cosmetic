@@ -1,0 +1,70 @@
+# Flask 웹 프레임워크
+Flask==3.1.2
+Flask-Login==0.6.3
+Flask-Session==0.8.0
+Flask-SQLAlchemy==3.1.1
+Werkzeug==3.1.3
+
+# OAuth
+Authlib==1.6.5
+oauthlib==3.3.1
+requests-oauthlib==2.0.0
+
+# 데이터베이스
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.11
+
+# 보안
+cryptography==46.0.3
+bcrypt==4.3.0
+
+# 환경 변수
+python-dotenv==1.1.1
+
+# LangChain & AI
+langchain==0.3.27
+langchain-chroma==0.2.3
+langchain-community==0.3.29
+langchain-core==0.3.75
+langchain-openai==0.3.32
+langchain-text-splitters==0.3.9
+langsmith==0.4.15
+
+# OpenAI
+openai==1.101.0
+
+# Google Generative AI
+google-genai==1.44.0
+google-ai-generativelanguage==0.6.18
+google-api-core==2.25.1
+google-auth==2.40.3
+
+# Google Cloud Storage
+google-cloud-storage==2.14.0
+
+# Vector DB
+chromadb==0.5.3
+chroma-hnswlib==0.7.3
+
+# Transformers (Reranker)
+torch==2.8.0
+transformers==4.56.2
+tokenizers==0.22.0
+
+# HTTP 요청
+requests==2.32.5
+httpx==0.28.1
+
+# 유틸리티
+numpy==1.26.4
+pandas==2.3.2
+tqdm==4.67.1
+python-dateutil==2.9.0.post0
+
+# 기타 의존성
+Jinja2==3.1.6
+click==8.2.1
+certifi==2025.8.3
+charset-normalizer==3.4.3
+idna==3.10
+urllib3==2.5.0

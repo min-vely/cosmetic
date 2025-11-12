@@ -26,6 +26,7 @@ from google.genai import types
 from io import BytesIO
 from tqdm import tqdm
 from flask import request, jsonify, session
+from google.cloud import storage
 
 # ------------------------------- 0. 초기 설정 -------------------------------
 # 한국 시간대 헬퍼 함수
@@ -54,6 +55,66 @@ def log_message(msg):
     print(msg)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {msg}\n")
+
+# ------------------------------- GCS에서 ChromaDB 다운로드 -------------------------------
+def download_chromadb_from_gcs(bucket_name="cosmetic-chromadb", source_prefix="chroma_db_1536/", local_dir=None):
+    """
+    GCS 버킷에서 ChromaDB 데이터를 다운로드
+
+    Args:
+        bucket_name: GCS 버킷 이름
+        source_prefix: GCS 내 ChromaDB 경로 (예: "chroma_db_1536/")
+        local_dir: 로컬 저장 경로 (기본값: CHROMA_DIR_1536)
+    """
+    if local_dir is None:
+        local_dir = CHROMA_DIR_1536
+
+    # 이미 로컬에 ChromaDB가 있으면 다운로드 건너뛰기
+    if os.path.exists(local_dir) and os.listdir(local_dir):
+        log_message(f"[GCS] ChromaDB가 이미 로컬에 존재합니다: {local_dir}")
+        return True
+
+    try:
+        log_message(f"[GCS] ChromaDB 다운로드 시작: gs://{bucket_name}/{source_prefix} -> {local_dir}")
+
+        # GCS 클라이언트 초기화
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+
+        # 로컬 디렉토리 생성
+        os.makedirs(local_dir, exist_ok=True)
+
+        # GCS에서 모든 파일 목록 가져오기
+        blobs = bucket.list_blobs(prefix=source_prefix)
+
+        downloaded_count = 0
+        for blob in blobs:
+            # 디렉토리는 건너뛰기
+            if blob.name.endswith('/'):
+                continue
+
+            # 로컬 파일 경로 생성
+            relative_path = blob.name[len(source_prefix):]
+            local_file_path = os.path.join(local_dir, relative_path)
+
+            # 로컬 디렉토리 생성
+            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+
+            # 파일 다운로드
+            blob.download_to_filename(local_file_path)
+            downloaded_count += 1
+
+            if downloaded_count % 10 == 0:
+                log_message(f"[GCS] 다운로드 진행 중... {downloaded_count}개 파일")
+
+        log_message(f"[GCS] ChromaDB 다운로드 완료: {downloaded_count}개 파일")
+        return True
+
+    except Exception as e:
+        log_message(f"[GCS ERROR] ChromaDB 다운로드 실패: {e}")
+        import traceback
+        log_message(f"[GCS ERROR] {traceback.format_exc()}")
+        return False
 
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY  # 세션 키 설정
@@ -125,7 +186,10 @@ def load_user(user_id):
 
 # 앱 컨텍스트 내에서 테이블 생성
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+    except Exception as e:
+        log_message(f"[WARN] 테이블 생성 중 오류 (이미 존재할 수 있음): {e}")
 
 # ------------------------------- OAuth 설정 (Google Login) -------------------------------
 oauth = OAuth(app)
@@ -398,19 +462,31 @@ def create_vectordb(chroma_dir, embedding_func, dimension_name, processed_file_p
 
     return vectordb
 
-# 2개의 벡터 DB 생성
-vectordb_1536 = create_vectordb(CHROMA_DIR_1536, embedding_1536, "1536차원", PROCESSED_FILES_1536)
+# 2개의 벡터 DB 생성 (GCS에서 다운로드 후 로드)
+# GCS에서 ChromaDB 다운로드 시도
+log_message("[INFO] GCS에서 ChromaDB 다운로드를 시도합니다...")
+download_success = download_chromadb_from_gcs(
+    bucket_name="cosmetic-chromadb",
+    source_prefix="chroma_db_1536/",
+    local_dir=CHROMA_DIR_1536
+)
+
+if os.path.exists(CHROMA_DIR_1536) and os.listdir(CHROMA_DIR_1536):
+    log_message("[INFO] ChromaDB 1536차원을 로드합니다...")
+    vectordb_1536 = Chroma(persist_directory=CHROMA_DIR_1536, embedding_function=embedding_1536)
+    retriever_1536 = vectordb_1536.as_retriever(search_kwargs={"k": 5})
+else:
+    log_message("[WARN] ChromaDB 1536차원이 없습니다. 데이터 없이 실행됩니다.")
+    vectordb_1536 = None
+    retriever_1536 = None
 
 # ⚠️ 임시 비활성화: 3072차원 테스트 후 다시 활성화 예정
-# vectordb_3072 = create_vectordb(CHROMA_DIR_3072, embedding_3072, "3072차원", PROCESSED_FILES_3072)
-vectordb_3072 = None  # 임시 비활성화
+vectordb_3072 = None
+retriever_3072 = None
 
 # 기본 설정 (호환성 유지)
 vectordb = vectordb_1536
-retriever = vectordb.as_retriever(search_kwargs={"k": 5})
-retriever_1536 = vectordb_1536.as_retriever(search_kwargs={"k": 5})
-# retriever_3072 = vectordb_3072.as_retriever(search_kwargs={"k": 5})  # 임시 비활성화
-retriever_3072 = None  # 임시 비활성화
+retriever = retriever_1536
 
 # ------------------------------- 2. 리랭커 -------------------------------
 reranker_model = "BAAI/bge-reranker-large"
@@ -670,6 +746,16 @@ def rag_pipeline_first(query, user_id="default", dimension=1536):
     dimension: 1536 또는 3072 중 선택
     """
     timing_info = {}
+
+    # ChromaDB가 없으면 오류 메시지 반환
+    if vectordb_1536 is None:
+        return {
+            "response": "죄송합니다. 현재 데이터베이스가 초기화되지 않았습니다.",
+            "images": [],
+            "product_names": [],
+            "code_names": [],
+            "timing": {"total": 0}
+        }
 
     # 0. 카테고리 추론 및 필터링 설정
     category = infer_category_from_query(query)
@@ -1123,7 +1209,7 @@ def apply_makeup():
 # ------------------------------- 10. 실행 -------------------------------
 if __name__ == "__main__":
     # Cloud Run에서는 PORT 환경 변수를 사용
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 8080))
     # 프로덕션 환경에서는 debug=False 사용
     debug = os.getenv("FLASK_ENV") == "development"
     app.run(host="0.0.0.0", port=port, debug=debug)

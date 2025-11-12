@@ -1,0 +1,69 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그 및 임시 파일
+*.log
+chromadblog.txt
+chromadblog_1536차원.txt
+chromadblog_3072차원.txt
+tmp/
+instance/
+
+# ChromaDB (GCS에서 다운로드하므로 Docker 이미지에서 제외)
+chroma_db_1536/
+chroma_db_3072/
+processed_files_1536.json
+processed_files_3072.json
+
+# 데이터베이스 (로컬)
+*.db
+*.sqlite
+*.sqlite3
+cosmetic.db
+instance/*.db
+
+# Cloud SQL Proxy
+cloud-sql-proxy.exe
+cloud-sql-proxy
+
+# 환경 변수 (빌드 시 제외, Cloud Run에서 설정)
+.env
+.env.local
+
+# 크롤러 데이터 (선택적)
+crawler/
+snapshots/
+selenium_user_data/
+
+# 스크립트
+setup_cloudsql.ps1
+setup_cloudsql.sh
+
+# README
+README.md
